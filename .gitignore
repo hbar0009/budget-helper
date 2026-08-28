@@ -43,6 +43,9 @@ token*.json
 /data/
 /statements/
 
+# personal config (account numbers, spreadsheet ids) — keep the .example
+/config/accounts.json
+
 # editor / OS
 .vscode/*
 !.vscode/extensions.json

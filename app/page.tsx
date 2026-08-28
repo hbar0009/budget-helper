@@ -1,15 +1,15 @@
+import ImportPanel from "./import-panel";
+
 export default function HomePage() {
   return (
     <main>
       <h1>budget-helper</h1>
       <p>
-        Scaffold only. Nothing is implemented yet. The plan from here:
+        Import step: parse all four statement CSVs at once, assign each to an
+        account, and classify inter-account transfers. Categorization and
+        spreadsheet sync are not built yet.
       </p>
-      <ol>
-        <li>Import a bank CSV.</li>
-        <li>Review each transaction on a card and assign a category / subcategory.</li>
-        <li>Push the categorized rows into a budget spreadsheet (Google Sheets first, Excel later).</li>
-      </ol>
+      <ImportPanel />
     </main>
   );
 }

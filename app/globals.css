@@ -13,7 +13,50 @@ body {
 }
 
 main {
-  max-width: 40rem;
+  max-width: 52rem;
   margin: 0 auto;
   padding: 3rem 1.5rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid #8883;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  color: crimson;
+}
+
+.muted {
+  opacity: 0.5;
+}
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+select {
+  font: inherit;
 }
