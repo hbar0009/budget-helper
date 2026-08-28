@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "budget-helper",
-  description: "Categorize bank transactions and push them into a budget spreadsheet",
+  description:
+    "Categorize bank transactions and push them into a budget spreadsheet",
 };
 
 export default function RootLayout({
