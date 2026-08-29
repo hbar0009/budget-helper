@@ -3,7 +3,8 @@
     {
       "name": "Groceries",
       "subcategories": [
-        "Supermarket"
+        "Supermarket",
+        "Liquor"
       ]
     },
     {
@@ -11,7 +12,8 @@
       "subcategories": [
         "Restaurant",
         "Cafe",
-        "Takeaway"
+        "Takeaway",
+        "Other"
       ]
     },
     {
@@ -38,7 +40,9 @@
         "Electricity",
         "Gas",
         "Water",
-        "Internet"
+        "Internet",
+        "Phone",
+        "Cashback"
       ]
     },
     {
@@ -66,7 +70,11 @@
       "subcategories": [
         "Streaming Services",
         "Video Games",
-        "Books"
+        "Books",
+        "Tennis",
+        "Movies",
+        "Musicals",
+        "Other"
       ]
     },
     {
@@ -74,7 +82,8 @@
       "subcategories": [
         "Green Fees",
         "Driving Range",
-        "Clubs"
+        "Clubs",
+        "Lessons"
       ]
     },
     {
@@ -118,7 +127,21 @@
       "subcategories": [
         "Cash Withdrawal",
         "Donation",
-        "Other"
+        "Other",
+        "Laundry",
+        "AI Subscriptions"
+      ]
+    },
+    {
+      "name": "Investments",
+      "subcategories": [
+        "Vanguard"
+      ]
+    },
+    {
+      "name": "Shared Account",
+      "subcategories": [
+        "Shared Account"
       ]
     }
   ]
