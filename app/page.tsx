@@ -1,19 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import AppHeader from "./components/AppHeader";
-import CategorizeStage from "./components/CategorizeStage";
-import ImportStage from "./components/ImportStage";
-import ReviewStage from "./components/ReviewStage";
-import Stepper from "./components/Stepper";
+
+import AppHeader from "@/components/AppHeader";
+import CategorizeStage from "@/components/CategorizeStage";
+import ImportStage from "@/components/ImportStage";
+import ReviewStage from "@/components/ReviewStage";
+import Stepper from "@/components/Stepper";
+import type { CategorizationMap } from "@/lib/transactions/summary";
+import type { ReconciledTransaction } from "@/lib/transactions/types";
 import {
   clearSession,
   loadSession,
   saveSession,
   type Stage,
 } from "./lib/session";
-import type { CategorizationMap } from "@/lib/transactions/summary";
-import type { ReconciledTransaction } from "@/lib/transactions/types";
 
 export default function HomePage() {
   const [restored, setRestored] = useState(false);
@@ -60,7 +61,7 @@ export default function HomePage() {
   return (
     <>
       <AppHeader onReset={unlocked ? handleReset : undefined} />
-      <main className="app-main">
+      <main className="mx-auto max-w-3xl px-6 pt-7 pb-20">
         <Stepper
           stage={stage}
           unlocked={unlocked}

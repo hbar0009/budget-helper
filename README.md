@@ -76,6 +76,14 @@ throwaway once SQLite lands. `Start over` clears it.
 Aggregation logic lives in `lib/transactions/summary.ts` (pure, unit-tested);
 the taxonomy is `config/categories.json`, served via `/api/categories`.
 
+## UI stack
+
+Tailwind CSS v4 + [shadcn/ui](https://ui.shadcn.com) (Radix primitives, owned
+component source under `components/ui/`). `components.json` configures the
+`shadcn` CLI so `npx shadcn@latest add <name>` works. Theme tokens are in
+`app/globals.css` and follow the OS light/dark setting via a media query — no
+`next-themes`, no toggle. `lib/utils.ts` has the `cn` helper.
+
 ## Config: `config/accounts.json`
 
 - `accounts[]` — `id`, `label`, `number` (drives transfer detection), `type`, `group`
@@ -89,14 +97,18 @@ the taxonomy is `config/categories.json`, served via `/api/categories`.
 app/
   layout.tsx              Root layout
   page.tsx                Flow orchestrator (client): Import -> Categorize -> Review
-  globals.css             Design tokens (light/dark) + component styles
-  components/             AppHeader, Stepper, ImportStage, CategorizeStage,
-                          TransactionCard, CategoryPicker, ReviewStage
-  hooks/useCategories.ts  Fetch the taxonomy
+  globals.css             Tailwind v4 + shadcn theme tokens (OS light/dark)
   lib/session.ts          localStorage save/restore (stopgap)
   api/accounts/route.ts   GET the account list for the UI
   api/categories/route.ts GET the category taxonomy
   api/import/route.ts     POST files + accountIds -> MultiImportResult (parse + reconcile)
+components/
+  ui/                     shadcn primitives (button, card, select, command, ...)
+  AppHeader, Stepper, ImportStage, CategorizeStage,
+  TransactionCard, CategoryPicker, ReviewStage, StatCard
+hooks/useCategories.ts    Fetch the taxonomy
+lib/utils.ts              cn() class-name helper
+lib/format.ts             Money formatting
 lib/accounts/
   config.ts               Load + validate config/accounts.json
 lib/categories/
