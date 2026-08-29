@@ -44,15 +44,17 @@ reconcileTransfers  classify inter-account transfers     (whole batch)          
 ### Transfer reconciliation
 
 A transfer between two of your accounts appears twice — a debit in one file, a
-credit in another. Matched legs (opposite sign, equal amount, dates within
-`maxDaysApart`, counterparty account numbers cross-referenced) are labelled:
+credit in another. Two legs pair on opposite sign, equal amount, and dates
+within `maxDaysApart`, plus any one of these counterparty signals (strongest
+first): a shared bank **receipt number**, one leg naming the **other account's
+number**, or both legs saying **"internal transfer"**. Pairs are labelled:
 
 | `transferState` | When | Effect |
 |---|---|---|
 | `netted` | both accounts in the **same** group | dropped from the budget |
 | `cross_group` | accounts in **different** groups (personal ↔ shared) | **kept** — so moving money into the shared account still shows in both budgets |
-| `unmatched` | looks like a transfer but no partner leg in the batch | kept, flagged for manual review |
-| `none` | everything else | untouched |
+| `unmatched` | a strong transfer signal but no partner leg in the batch | kept, flagged for manual review |
+| `none` | everything else (incl. a lone row that merely says "transfer") | untouched |
 
 `maxDaysApart` defaults to 1 (same-bank transfers settle instantly).
 

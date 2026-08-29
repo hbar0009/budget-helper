@@ -135,3 +135,46 @@ test("matches when only one leg names the counterparty account number", () => {
 
   assert.equal(summary.nettedPairs, 1);
 });
+
+test("matches a correction leg that only says 'transfer' when the other leg is clean", () => {
+  // Real case: one leg misnames the counterparty and never says "internal
+  // transfer", but the other leg identifies it by number and both share a receipt.
+  const { transactions, summary } = reconcileTransfers(
+    [
+      txn({ accountId: "p-savings", amount: -34, description: "Fix for another incorrect transfer - Receipt 9488 - To Orange Everyday" }),
+      txn({ accountId: "s-everyday", amount: 34, description: "Fix for another incorrect transfer - Internal Transfer - Receipt 9488 Savings Maximiser 1000000002" }),
+    ],
+    ACCOUNTS,
+  );
+
+  assert.equal(summary.crossGroupPairs, 1);
+  assert.equal(summary.unmatched, 0);
+  assert.ok(transactions.every((t) => t.transferState === "cross_group"));
+  assert.equal(transactions[0].transferPairId, transactions[1].transferPairId);
+});
+
+test("a shared receipt number overrides a misnamed counterparty", () => {
+  const { summary } = reconcileTransfers(
+    [
+      // names p-everyday's number, but the real other leg is in s-everyday
+      txn({ accountId: "p-savings", amount: -20, description: "Correction - Receipt 5511 - To Orange Everyday 1000000001" }),
+      txn({ accountId: "s-everyday", amount: 20, description: "Correction - Internal Transfer - Receipt 5511 Savings Maximiser 1000000002" }),
+    ],
+    ACCOUNTS,
+  );
+
+  assert.equal(summary.crossGroupPairs, 1);
+});
+
+test("an unpaired row that merely contains 'transfer' stays 'none', not 'unmatched'", () => {
+  const { transactions, summary } = reconcileTransfers(
+    [
+      txn({ accountId: "p-everyday", amount: -50, description: "Wise transfer to a contractor" }),
+      txn({ accountId: "s-everyday", amount: 50, description: "Refund transfer from a client" }),
+    ],
+    ACCOUNTS,
+  );
+
+  assert.deepEqual(summary, { nettedPairs: 0, crossGroupPairs: 0, unmatched: 0 });
+  assert.ok(transactions.every((t) => t.transferState === "none"));
+});
