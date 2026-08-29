@@ -106,6 +106,24 @@ test("setCategorization returns undefined for an unknown id", () => {
   );
 });
 
+test("listTransactions returns rows oldest first", () => {
+  const db = freshDb();
+  upsertTransactions(
+    db,
+    [
+      txn({ amount: -1, date: "2026-08-20" }),
+      txn({ amount: -2, date: "2026-08-05" }),
+      txn({ amount: -3, date: "2026-08-12" }),
+    ],
+    "now",
+  );
+
+  assert.deepEqual(
+    listTransactions(db).map((t) => t.date),
+    ["2026-08-05", "2026-08-12", "2026-08-20"],
+  );
+});
+
 test("listTransactions filters by status", () => {
   const db = freshDb();
   const a = txn({ amount: -1 });

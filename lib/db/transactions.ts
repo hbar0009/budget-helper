@@ -105,6 +105,7 @@ export function upsertTransactions(
   return { inserted, alreadyPresent: transactions.length - inserted };
 }
 
+/** Oldest first, so the categorize deck runs chronologically. */
 export function listTransactions(
   db: Database.Database,
   opts: { status?: TxnStatus } = {},
@@ -112,10 +113,10 @@ export function listTransactions(
   const rows = opts.status
     ? db
         .prepare(
-          `SELECT * FROM transactions WHERE status = ? ORDER BY date DESC, id`,
+          `SELECT * FROM transactions WHERE status = ? ORDER BY date ASC, id`,
         )
         .all(opts.status)
-    : db.prepare(`SELECT * FROM transactions ORDER BY date DESC, id`).all();
+    : db.prepare(`SELECT * FROM transactions ORDER BY date ASC, id`).all();
   return (rows as Row[]).map(toStored);
 }
 
