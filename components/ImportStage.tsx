@@ -20,10 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StatCard } from "@/components/StatCard";
-import type {
-  MultiImportResult,
-  ReconciledTransaction,
-} from "@/lib/transactions/types";
+import type { TransferSummary, ImportRowError } from "@/lib/transactions/types";
 
 interface AccountOption {
   id: string;
@@ -37,15 +34,22 @@ interface FileAssignment {
   accountId: string;
 }
 
+interface ImportResponse {
+  batch: { total: number; inserted: number; alreadyPresent: number };
+  transfers: TransferSummary;
+  counts: { pending: number; categorized: number; skipped: number };
+  errors: ImportRowError[];
+}
+
 export default function ImportStage({
   onImported,
 }: {
-  onImported: (transactions: ReconciledTransaction[]) => void;
+  onImported: () => void;
 }) {
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<FileAssignment[]>([]);
-  const [result, setResult] = useState<MultiImportResult | null>(null);
+  const [result, setResult] = useState<ImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -95,7 +99,7 @@ export default function ImportStage({
         setError(data.error ?? `Import failed (${res.status}).`);
         return;
       }
-      setResult(data as MultiImportResult);
+      setResult(data as ImportResponse);
     } catch {
       setError("Could not reach the import endpoint.");
     } finally {
@@ -115,7 +119,7 @@ export default function ImportStage({
     return (
       <ImportSummary
         result={result}
-        onContinue={() => onImported(result.transactions)}
+        onContinue={onImported}
         onDiscard={() => {
           setResult(null);
           setAssignments([]);
@@ -133,7 +137,8 @@ export default function ImportStage({
         <CardTitle>Import statements</CardTitle>
         <CardDescription>
           Select every account&apos;s CSV for the same date range at once, then
-          say which account each file is.
+          say which account each file is. Re-importing a statement is safe —
+          rows already on file are left as they are.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -203,38 +208,44 @@ function ImportSummary({
   onContinue,
   onDiscard,
 }: {
-  result: MultiImportResult;
+  result: ImportResponse;
   onContinue: () => void;
   onDiscard: () => void;
 }) {
-  const { nettedPairs, crossGroupPairs, unmatched } = result.transfers;
-  const deckSize = result.transactions.filter(
-    (t) => t.transferState !== "netted",
-  ).length;
+  const { batch, transfers, counts, errors } = result;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Imported</CardTitle>
         <CardDescription>
-          Parsed and reconciled. Nothing is saved to a spreadsheet yet.
+          Parsed, reconciled, and saved. Nothing is written to a spreadsheet yet.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <StatCard label="Transactions" value={result.transactions.length} />
-          <StatCard label="To categorize" value={deckSize} />
-          <StatCard label="Netted pairs" value={nettedPairs} hint="excluded" />
-          <StatCard label="Cross-group" value={crossGroupPairs} hint="kept" />
-          <StatCard label="Unmatched" value={unmatched} hint="review" />
-          <StatCard label="Row errors" value={result.errors.length} />
+          <StatCard label="In this file set" value={batch.total} />
+          <StatCard label="Newly added" value={batch.inserted} />
+          <StatCard
+            label="Already on file"
+            value={batch.alreadyPresent}
+            hint="unchanged"
+          />
+          <StatCard label="Netted pairs" value={transfers.nettedPairs} hint="excluded" />
+          <StatCard label="Cross-group" value={transfers.crossGroupPairs} hint="kept" />
+          <StatCard label="Unmatched" value={transfers.unmatched} hint="review" />
         </div>
 
-        {result.errors.length > 0 && (
+        <p className="text-muted-foreground text-sm">
+          {counts.pending} transaction{counts.pending === 1 ? "" : "s"} waiting to
+          be categorized.
+        </p>
+
+        {errors.length > 0 && (
           <Alert variant="destructive">
             <AlertDescription>
               <ul className="list-disc pl-4">
-                {result.errors.map((e, i) => (
+                {errors.map((e, i) => (
                   <li key={`${e.accountId ?? "?"}-${e.row}-${i}`}>
                     {e.accountId ?? "?"} row {e.row}: {e.message}
                   </li>
@@ -245,9 +256,9 @@ function ImportSummary({
         )}
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onContinue}>Start categorizing →</Button>
+          <Button onClick={onContinue}>Categorize →</Button>
           <Button variant="ghost" onClick={onDiscard}>
-            Choose different files
+            Import more files
           </Button>
         </div>
       </CardContent>

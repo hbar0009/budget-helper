@@ -1,62 +1,132 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
 import CategorizeStage from "@/components/CategorizeStage";
 import ImportStage from "@/components/ImportStage";
 import ReviewStage from "@/components/ReviewStage";
-import Stepper from "@/components/Stepper";
+import Stepper, { type Stage } from "@/components/Stepper";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { StoredTransaction } from "@/lib/db/transactions";
 import type { CategorizationMap } from "@/lib/transactions/summary";
-import type { ReconciledTransaction } from "@/lib/transactions/types";
-import {
-  clearSession,
-  loadSession,
-  saveSession,
-  type Stage,
-} from "./lib/session";
 
 export default function HomePage() {
-  const [restored, setRestored] = useState(false);
+  const [transactions, setTransactions] = useState<StoredTransaction[] | null>(
+    null,
+  );
   const [stage, setStage] = useState<Stage>("import");
-  const [transactions, setTransactions] = useState<ReconciledTransaction[]>([]);
-  const [categorizations, setCategorizations] = useState<CategorizationMap>({});
   const [index, setIndex] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
-  // Restore an in-progress session on first mount.
-  useEffect(() => {
-    const session = loadSession();
-    if (session) {
-      setStage(session.stage);
-      setTransactions(session.transactions);
-      setCategorizations(session.categorizations);
-      setIndex(session.index ?? 0);
+  const load = useCallback(async (): Promise<StoredTransaction[] | null> => {
+    try {
+      const res = await fetch("/api/transactions");
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const rows = data.transactions as StoredTransaction[];
+      setTransactions(rows);
+      return rows;
+    } catch {
+      setError("Could not load saved transactions.");
+      setTransactions([]);
+      return null;
     }
-    setRestored(true);
   }, []);
 
-  // Persist after every change (once restore has run, so we don't clobber it).
+  // First load: pick the stage from what's already stored.
   useEffect(() => {
-    if (!restored || transactions.length === 0) return;
-    saveSession({ transactions, categorizations, stage, index });
-  }, [restored, transactions, categorizations, stage, index]);
+    load().then((rows) => {
+      if (!rows) return;
+      const deck = rows.filter((t) => t.transferState !== "netted");
+      const firstPending = deck.findIndex((t) => t.status === "pending");
+      if (firstPending >= 0) {
+        setIndex(firstPending);
+        setStage("categorize");
+      } else if (deck.length > 0) {
+        setStage("review");
+      } else {
+        setStage("import");
+      }
+    });
+  }, [load]);
 
-  const unlocked = transactions.length > 0;
+  const categorizations: CategorizationMap = useMemo(() => {
+    const map: CategorizationMap = {};
+    for (const t of transactions ?? []) {
+      if (t.status === "categorized" && t.category && t.subcategory) {
+        map[t.id] = { category: t.category, subcategory: t.subcategory };
+      } else if (t.status === "skipped") {
+        map[t.id] = null;
+      }
+    }
+    return map;
+  }, [transactions]);
 
-  function handleImported(imported: ReconciledTransaction[]) {
-    setTransactions(imported);
-    setCategorizations({});
-    setIndex(0);
+  const categorize = useCallback(
+    async (
+      id: string,
+      value: { category: string; subcategory: string } | null,
+    ) => {
+      // Optimistic: reflect the change immediately, reconcile with the server
+      // response, and reload on failure.
+      setTransactions((prev) =>
+        (prev ?? []).map((t) =>
+          t.id !== id
+            ? t
+            : value
+              ? {
+                  ...t,
+                  status: "categorized",
+                  category: value.category,
+                  subcategory: value.subcategory,
+                }
+              : { ...t, status: "skipped", category: null, subcategory: null },
+        ),
+      );
+
+      try {
+        const res = await fetch(`/api/transactions/${id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(value ?? { status: "skipped" }),
+        });
+        if (!res.ok) throw new Error();
+        const updated = (await res.json()) as StoredTransaction;
+        setTransactions((prev) =>
+          (prev ?? []).map((t) => (t.id === id ? updated : t)),
+        );
+      } catch {
+        setError("A change didn't save — reloaded from the database.");
+        await load();
+      }
+    },
+    [load],
+  );
+
+  async function handleImported() {
+    const rows = await load();
+    const deck = (rows ?? []).filter((t) => t.transferState !== "netted");
+    const firstPending = deck.findIndex((t) => t.status === "pending");
+    setIndex(firstPending >= 0 ? firstPending : 0);
     setStage("categorize");
   }
 
-  function handleReset() {
-    clearSession();
+  async function handleReset() {
+    if (
+      !window.confirm(
+        "Delete every imported transaction and its categorization? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
+    await fetch("/api/transactions", { method: "DELETE" });
     setTransactions([]);
-    setCategorizations({});
     setIndex(0);
     setStage("import");
   }
+
+  const unlocked = (transactions?.length ?? 0) > 0;
 
   return (
     <>
@@ -68,22 +138,26 @@ export default function HomePage() {
           onNavigate={(next) => unlocked && setStage(next)}
         />
 
-        {stage === "import" && <ImportStage onImported={handleImported} />}
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-        {stage === "categorize" && (
+        {transactions === null ? (
+          <p className="text-muted-foreground text-sm">Loading…</p>
+        ) : stage === "import" ? (
+          <ImportStage onImported={handleImported} />
+        ) : stage === "categorize" ? (
           <CategorizeStage
             transactions={transactions}
             categorizations={categorizations}
             index={index}
             onIndexChange={setIndex}
-            onCategorize={(id, value) =>
-              setCategorizations((prev) => ({ ...prev, [id]: value }))
-            }
+            onCategorize={categorize}
             onComplete={() => setStage("review")}
           />
-        )}
-
-        {stage === "review" && (
+        ) : (
           <ReviewStage
             transactions={transactions}
             categorizations={categorizations}

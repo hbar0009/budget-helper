@@ -4,16 +4,17 @@ import {
   accountMap,
   loadAccountsConfig,
 } from "@/lib/accounts/config";
+import { getDb } from "@/lib/db";
+import { statusCounts, upsertTransactions } from "@/lib/db/transactions";
 import { assignAccount } from "@/lib/transactions/assign";
 import { CsvImportError, parseCsv } from "@/lib/transactions/parse";
 import { reconcileTransfers } from "@/lib/transactions/reconcile";
 import type {
   AccountTransaction,
   ImportRowError,
-  MultiImportResult,
 } from "@/lib/transactions/types";
 
-// The pipeline uses node:crypto and the filesystem, so this route needs Node.
+// The pipeline uses node:crypto, the filesystem, and SQLite — needs Node.
 export const runtime = "nodejs";
 
 /**
@@ -22,9 +23,8 @@ export const runtime = "nodejs";
  * Body: multipart form data with, in matching order, repeated `file` fields
  * (the CSVs) and repeated `accountId` fields (which account each file is).
  *
- * Response: `MultiImportResult` on success, `{ error }` otherwise.
- *
- * Parses and reconciles only — nothing is persisted yet.
+ * Parses, reconciles inter-account transfers, and upserts the result into the
+ * database (existing rows — matched by content hash — are left untouched).
  */
 export async function POST(request: Request): Promise<Response> {
   const form = await request.formData().catch(() => null);
@@ -91,10 +91,17 @@ export async function POST(request: Request): Promise<Response> {
 
   const { transactions, summary } = reconcileTransfers(all, config.accounts);
 
-  const result: MultiImportResult = {
+  const db = getDb();
+  const { inserted, alreadyPresent } = upsertTransactions(
+    db,
     transactions,
+    new Date().toISOString(),
+  );
+
+  return NextResponse.json({
+    batch: { total: transactions.length, inserted, alreadyPresent },
     transfers: summary,
+    counts: statusCounts(db),
     errors,
-  };
-  return NextResponse.json(result);
+  });
 }

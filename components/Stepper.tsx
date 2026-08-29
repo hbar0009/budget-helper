@@ -3,7 +3,8 @@
 import { CheckIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import type { Stage } from "@/app/lib/session";
+
+export type Stage = "import" | "categorize" | "review";
 
 const STEPS: { key: Stage; label: string }[] = [
   { key: "import", label: "Import" },

@@ -4,8 +4,8 @@ A simple app to assist in the process of categorizing and adding transaction dat
 
 ## Status
 
-Import, transfer reconciliation, and the categorization card + review screen are
-built. Persistence is a `localStorage` stopgap; spreadsheet sync is not started.
+Import, transfer reconciliation, the categorization card + review screen, and
+local SQLite persistence are built. Spreadsheet sync is not started.
 
 ## Setup
 
@@ -74,9 +74,24 @@ Review`, driven by `app/page.tsx`):
   rows and a list of skipped transactions to follow up. `Download CSV` is a
   stopgap until the `sink` exists.
 
-Progress (transactions + categorizations + current position) is saved to
-`localStorage` so a refresh doesn't lose a half-finished pass — this is
-throwaway once SQLite lands. `Start over` clears it.
+## Persistence
+
+Imported transactions and their categorizations live in a local SQLite database
+(`data/budget-helper.db`, gitignored; override the path with `BUDGET_DB_PATH`).
+The client holds no durable state — it reads the working set from
+`GET /api/transactions` on load and picks the stage from it (pending rows →
+Categorize, otherwise → Review or Import).
+
+- `POST /api/import` parses + reconciles, then `INSERT OR IGNORE`s by content
+  hash — re-importing a statement never double-counts and never overwrites a
+  categorization you already made. Netted transfers are stored as `excluded`.
+- `PATCH /api/transactions/:id` — `{ category, subcategory }` or
+  `{ status: "skipped" }` — one call per card, optimistic on the client.
+- `DELETE /api/transactions` — the "Clear all data" escape hatch.
+
+`better-sqlite3` (synchronous); `serverExternalPackages` in `next.config.ts`
+keeps the native addon unbundled. The connection singleton is in `lib/db/`;
+query functions take an explicit `db` and are unit-tested against `:memory:`.
 
 Aggregation logic lives in `lib/transactions/summary.ts` (pure, unit-tested);
 the taxonomy is `config/categories.json`, read via `GET /api/categories` and
@@ -103,12 +118,13 @@ component source under `components/ui/`). `components.json` configures the
 ```
 app/
   layout.tsx              Root layout
-  page.tsx                Flow orchestrator (client): Import -> Categorize -> Review
+  page.tsx                Flow orchestrator (client): loads from the DB, picks the stage
   globals.css             Tailwind v4 + shadcn theme tokens (OS light/dark)
-  lib/session.ts          localStorage save/restore (stopgap)
   api/accounts/route.ts   GET the account list for the UI
   api/categories/route.ts GET the taxonomy / POST a new category or subcategory
-  api/import/route.ts     POST files + accountIds -> MultiImportResult (parse + reconcile)
+  api/import/route.ts     POST files + accountIds -> parse, reconcile, upsert into the DB
+  api/transactions/route.ts        GET stored rows (+?status=) / DELETE all
+  api/transactions/[id]/route.ts   PATCH one row's categorization
 components/
   ui/                     shadcn primitives (button, card, select, command, ...)
   AppHeader, Stepper, ImportStage, CategorizeStage,
@@ -116,6 +132,10 @@ components/
 hooks/useCategories.ts    Fetch the taxonomy
 lib/utils.ts              cn() class-name helper
 lib/format.ts             Money formatting
+lib/db/
+  index.ts                SQLite connection singleton (better-sqlite3)
+  schema.ts               Schema + user_version migrations
+  transactions.ts         Typed queries (upsert / list / setCategorization / ...), tested vs :memory:
 lib/accounts/
   config.ts               Load + validate config/accounts.json
 lib/categories/
@@ -145,6 +165,6 @@ Add a `BankProfile` to `lib/transactions/profiles.ts` and push it onto
 1. ~~CSV import + parsing.~~ Done.
 2. ~~Multi-account upload + inter-account transfer reconciliation.~~ Done.
 3. ~~Per-transaction review card: assign category / subcategory, plus review screen.~~ Done.
-4. Persist categorized transactions locally (SQLite) — replaces the `localStorage` stopgap.
+4. ~~Persist transactions + categorizations locally (SQLite).~~ Done.
 5. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.
 6. Reimbursement / split-expense tracking (design agreed; see notes).

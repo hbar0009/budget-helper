@@ -216,11 +216,11 @@ export default function ReviewStage({
       <p className="text-muted-foreground text-xs">
         CSV export is a stopgap. Writing to Google Sheets / Excel via the
         per-group <code className="text-foreground">sink</code> is the next
-        feature. Progress is saved in this browser until then.
+        feature. Everything is saved in the local database as you go.
       </p>
 
       <Button variant="ghost" size="sm" onClick={onReset}>
-        Start over
+        Clear all data
       </Button>
     </div>
   );
