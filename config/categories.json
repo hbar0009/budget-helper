@@ -3,21 +3,15 @@
     {
       "name": "Groceries",
       "subcategories": [
-        "Supermarket",
-        "Butcher / Deli",
-        "Bakery",
-        "Market",
-        "Other"
+        "Supermarket"
       ]
     },
     {
       "name": "Eating Out",
       "subcategories": [
         "Restaurant",
-        "Cafe / Coffee",
-        "Takeaway / Delivery",
-        "Pub / Bar",
-        "Snacks"
+        "Cafe",
+        "Takeaway"
       ]
     },
     {
@@ -25,31 +19,34 @@
       "subcategories": [
         "Public Transport",
         "Fuel",
-        "Rideshare / Taxi",
-        "Parking / Tolls",
+        "Parking",
+        "Tolls",
         "Car Servicing",
-        "Registration"
+        "Registration",
+        "Insurance"
       ]
     },
     {
       "name": "Housing",
       "subcategories": [
-        "Rent / Mortgage",
-        "Electricity / Gas",
+        "Rent"
+      ]
+    },
+    {
+      "name": "Utilities",
+      "subcategories": [
+        "Electricity",
+        "Gas",
         "Water",
-        "Internet / Phone",
-        "Maintenance",
-        "Furniture"
+        "Internet"
       ]
     },
     {
       "name": "Health",
       "subcategories": [
-        "Doctor / Specialist",
+        "Doctor",
         "Pharmacy",
         "Dental",
-        "Optical",
-        "Gym / Fitness",
         "Insurance"
       ]
     },
@@ -67,20 +64,23 @@
     {
       "name": "Entertainment",
       "subcategories": [
-        "Subscriptions",
-        "Events / Activities",
-        "Games",
-        "Books / Media",
-        "Sport",
-        "Golf"
+        "Streaming Services",
+        "Video Games",
+        "Books"
+      ]
+    },
+    {
+      "name": "Golf",
+      "subcategories": [
+        "Green Fees",
+        "Driving Range",
+        "Clubs"
       ]
     },
     {
       "name": "Personal Care",
       "subcategories": [
-        "Haircut",
-        "Cosmetics",
-        "Other"
+        "Haircut"
       ]
     },
     {
@@ -110,8 +110,7 @@
         "Bank Fees",
         "Interest Charged",
         "Foreign Transaction",
-        "ATM",
-        "Utility Cashback"
+        "ATM"
       ]
     },
     {
@@ -119,9 +118,6 @@
       "subcategories": [
         "Cash Withdrawal",
         "Donation",
-        "Education",
-        "Pets",
-        "Uncategorized",
         "Other"
       ]
     }
