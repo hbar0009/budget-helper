@@ -1,16 +1,128 @@
 {
   "categories": [
-    { "name": "Groceries", "subcategories": ["Supermarket", "Butcher / Deli", "Bakery", "Market", "Other"] },
-    { "name": "Eating Out", "subcategories": ["Restaurant", "Cafe / Coffee", "Takeaway / Delivery", "Pub / Bar", "Snacks"] },
-    { "name": "Transport", "subcategories": ["Public Transport", "Fuel", "Rideshare / Taxi", "Parking / Tolls", "Car Servicing", "Registration"] },
-    { "name": "Housing", "subcategories": ["Rent / Mortgage", "Electricity / Gas", "Water", "Internet / Phone", "Maintenance", "Furniture"] },
-    { "name": "Health", "subcategories": ["Doctor / Specialist", "Pharmacy", "Dental", "Optical", "Gym / Fitness", "Insurance"] },
-    { "name": "Shopping", "subcategories": ["Clothing", "Electronics", "Homewares", "Gifts", "Hobbies", "Other"] },
-    { "name": "Entertainment", "subcategories": ["Subscriptions", "Events / Activities", "Games", "Books / Media", "Sport"] },
-    { "name": "Personal Care", "subcategories": ["Haircut", "Cosmetics", "Other"] },
-    { "name": "Travel", "subcategories": ["Flights", "Accommodation", "Activities", "Local Transport", "Food"] },
-    { "name": "Income", "subcategories": ["Salary", "Interest", "Refund", "Reimbursement", "Gift", "Other"] },
-    { "name": "Fees & Interest", "subcategories": ["Bank Fees", "Interest Charged", "Foreign Transaction", "ATM"] },
-    { "name": "Miscellaneous", "subcategories": ["Cash Withdrawal", "Donation", "Education", "Pets", "Uncategorized", "Other"] }
+    {
+      "name": "Groceries",
+      "subcategories": [
+        "Supermarket",
+        "Butcher / Deli",
+        "Bakery",
+        "Market",
+        "Other"
+      ]
+    },
+    {
+      "name": "Eating Out",
+      "subcategories": [
+        "Restaurant",
+        "Cafe / Coffee",
+        "Takeaway / Delivery",
+        "Pub / Bar",
+        "Snacks"
+      ]
+    },
+    {
+      "name": "Transport",
+      "subcategories": [
+        "Public Transport",
+        "Fuel",
+        "Rideshare / Taxi",
+        "Parking / Tolls",
+        "Car Servicing",
+        "Registration"
+      ]
+    },
+    {
+      "name": "Housing",
+      "subcategories": [
+        "Rent / Mortgage",
+        "Electricity / Gas",
+        "Water",
+        "Internet / Phone",
+        "Maintenance",
+        "Furniture"
+      ]
+    },
+    {
+      "name": "Health",
+      "subcategories": [
+        "Doctor / Specialist",
+        "Pharmacy",
+        "Dental",
+        "Optical",
+        "Gym / Fitness",
+        "Insurance"
+      ]
+    },
+    {
+      "name": "Shopping",
+      "subcategories": [
+        "Clothing",
+        "Electronics",
+        "Homewares",
+        "Gifts",
+        "Hobbies",
+        "Other"
+      ]
+    },
+    {
+      "name": "Entertainment",
+      "subcategories": [
+        "Subscriptions",
+        "Events / Activities",
+        "Games",
+        "Books / Media",
+        "Sport",
+        "Golf"
+      ]
+    },
+    {
+      "name": "Personal Care",
+      "subcategories": [
+        "Haircut",
+        "Cosmetics",
+        "Other"
+      ]
+    },
+    {
+      "name": "Travel",
+      "subcategories": [
+        "Flights",
+        "Accommodation",
+        "Activities",
+        "Local Transport",
+        "Food"
+      ]
+    },
+    {
+      "name": "Income",
+      "subcategories": [
+        "Salary",
+        "Interest",
+        "Refund",
+        "Reimbursement",
+        "Gift",
+        "Other"
+      ]
+    },
+    {
+      "name": "Fees & Interest",
+      "subcategories": [
+        "Bank Fees",
+        "Interest Charged",
+        "Foreign Transaction",
+        "ATM"
+      ]
+    },
+    {
+      "name": "Miscellaneous",
+      "subcategories": [
+        "Cash Withdrawal",
+        "Donation",
+        "Education",
+        "Pets",
+        "Uncategorized",
+        "Other"
+      ]
+    }
   ]
 }

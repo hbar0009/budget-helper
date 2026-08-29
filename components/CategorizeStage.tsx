@@ -32,11 +32,13 @@ export default function CategorizeStage({
   onCategorize,
   onComplete,
 }: Props) {
-  const { categories, error } = useCategories();
+  const { categories, error, addCategory } = useCategories();
   const deck = useMemo(() => budgetDeck(transactions), [transactions]);
 
   const [step, setStep] = useState<"category" | "subcategory">("category");
   const [pendingCategory, setPendingCategory] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const current: ReconciledTransaction | undefined = deck[index];
   const existing = current ? categorizations[current.id] : undefined;
@@ -50,6 +52,7 @@ export default function CategorizeStage({
       setPendingCategory(null);
       setStep("category");
     }
+    setSaveError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, current?.id]);
 
@@ -66,19 +69,56 @@ export default function CategorizeStage({
     goto(index + 1);
   }, [current, onCategorize, goto, index]);
 
-  const pickSubcategory = useCallback(
-    (subcategory: string) => {
-      if (!current || !pendingCategory) return;
-      onCategorize(current.id, { category: pendingCategory, subcategory });
-      goto(index + 1);
-    },
-    [current, pendingCategory, onCategorize, goto, index],
-  );
+  const chooseCategory = useCallback((name: string) => {
+    setPendingCategory(name);
+    setStep("subcategory");
+    setSaveError(null);
+  }, []);
 
   const changeCategory = useCallback(() => {
     setStep("category");
     setPendingCategory(null);
+    setSaveError(null);
   }, []);
+
+  /** Finalize the current card. Persists the category/subcategory first if
+   *  either is new. */
+  const commitSubcategory = useCallback(
+    async (subcategory: string) => {
+      if (!current || !pendingCategory) return;
+      const sub = subcategory.trim();
+      if (!sub) return;
+
+      const known = categories?.find(
+        (c) => c.name.toLowerCase() === pendingCategory.toLowerCase(),
+      );
+      const needsPersist =
+        !known ||
+        !known.subcategories.some((s) => s.toLowerCase() === sub.toLowerCase());
+
+      if (needsPersist) {
+        setSaving(true);
+        try {
+          await addCategory(pendingCategory, sub);
+        } catch (err) {
+          setSaveError(
+            err instanceof Error ? err.message : "Could not save the category.",
+          );
+          return;
+        } finally {
+          setSaving(false);
+        }
+      }
+
+      setSaveError(null);
+      onCategorize(current.id, {
+        category: known?.name ?? pendingCategory,
+        subcategory: sub,
+      });
+      goto(index + 1);
+    },
+    [current, pendingCategory, categories, addCategory, onCategorize, goto, index],
+  );
 
   // Alt chords — don't collide with typing in the picker's search box.
   useEffect(() => {
@@ -153,8 +193,10 @@ export default function CategorizeStage({
   }
 
   const categoryNames = categories.map((c) => c.name);
-  const subcategoryNames =
-    categories.find((c) => c.name === pendingCategory)?.subcategories ?? [];
+  const pendingCat = categories.find(
+    (c) => c.name.toLowerCase() === (pendingCategory ?? "").toLowerCase(),
+  );
+  const subcategoryNames = pendingCat?.subcategories ?? [];
 
   return (
     <div className="space-y-4">
@@ -175,10 +217,8 @@ export default function CategorizeStage({
           label="Category"
           options={categoryNames}
           value={pendingCategory}
-          onPick={(category) => {
-            setPendingCategory(category);
-            setStep("subcategory");
-          }}
+          onPick={chooseCategory}
+          onCreate={chooseCategory}
         />
       ) : (
         <div className="space-y-2">
@@ -189,15 +229,27 @@ export default function CategorizeStage({
             className="-ml-2"
           >
             ← {pendingCategory}
+            {!pendingCat && (
+              <span className="text-muted-foreground ml-1">(new)</span>
+            )}
           </Button>
           <CategoryPicker
             key={`sub-${current!.id}-${pendingCategory}`}
             label="Subcategory"
             options={subcategoryNames}
             value={existing?.subcategory ?? null}
-            onPick={pickSubcategory}
+            onPick={commitSubcategory}
+            onCreate={commitSubcategory}
             onEscape={changeCategory}
           />
+          {saving && (
+            <p className="text-muted-foreground text-xs">Saving…</p>
+          )}
+          {saveError && (
+            <Alert variant="destructive">
+              <AlertDescription>{saveError}</AlertDescription>
+            </Alert>
+          )}
         </div>
       )}
 

@@ -17,7 +17,8 @@ npm run dev
 
 Then open http://localhost:3000. `config/accounts.json` is gitignored (it holds
 your account numbers and spreadsheet ids); the `.example` is the template.
-`config/categories.json` is committed — edit it directly to change the taxonomy.
+`config/categories.json` is committed — edit it directly to change the taxonomy,
+or add entries from the Categorize screen (the app writes back to this file).
 
 ## Scripts
 
@@ -63,7 +64,11 @@ Review`, driven by `app/page.tsx`):
 - **Categorize** — one card per transaction (netted transfers excluded). Pick a
   category, then a subcategory, via a keyboard-first filter box: type to narrow,
   `↑`/`↓` to move, `Enter` to pick. `⌥S` skips, `⌥←` / `⌥→` move between cards.
-  Picking a subcategory auto-advances.
+  Picking a subcategory auto-advances. If your text matches nothing, a
+  **Create "…"** row appears — selecting it adds the category/subcategory (a new
+  category is written only once you name its first subcategory) and `POST`s it to
+  `config/categories.json` so it sticks for later sessions. New entries append to
+  the end; renaming/deleting is done by editing the file.
 - **Review** — per-group (`personal` / `shared`) net totals broken down by
   category → subcategory, plus counts of skipped / pending / netted / cross-group
   rows and a list of skipped transactions to follow up. `Download CSV` is a
@@ -74,7 +79,9 @@ Progress (transactions + categorizations + current position) is saved to
 throwaway once SQLite lands. `Start over` clears it.
 
 Aggregation logic lives in `lib/transactions/summary.ts` (pure, unit-tested);
-the taxonomy is `config/categories.json`, served via `/api/categories`.
+the taxonomy is `config/categories.json`, read via `GET /api/categories` and
+extended via `POST /api/categories` (`{ category, subcategory? }` — pure
+`addToCategories` in `lib/categories/config.ts`, unit-tested).
 
 ## UI stack
 
@@ -100,7 +107,7 @@ app/
   globals.css             Tailwind v4 + shadcn theme tokens (OS light/dark)
   lib/session.ts          localStorage save/restore (stopgap)
   api/accounts/route.ts   GET the account list for the UI
-  api/categories/route.ts GET the category taxonomy
+  api/categories/route.ts GET the taxonomy / POST a new category or subcategory
   api/import/route.ts     POST files + accountIds -> MultiImportResult (parse + reconcile)
 components/
   ui/                     shadcn primitives (button, card, select, command, ...)
@@ -112,7 +119,7 @@ lib/format.ts             Money formatting
 lib/accounts/
   config.ts               Load + validate config/accounts.json
 lib/categories/
-  config.ts               Load + validate config/categories.json (parse fn is pure/tested)
+  config.ts               Load / validate / mutate / write config/categories.json (pure fns tested)
 lib/transactions/
   types.ts                Canonical shapes for each pipeline stage
   id.ts                   Content-hash helper for row ids

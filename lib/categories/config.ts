@@ -9,7 +9,7 @@
  * `parseCategoriesConfig` is pure and unit-tested.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface Category {
@@ -54,6 +54,65 @@ export function parseCategoriesConfig(raw: string): CategoriesConfig {
   }
   validate(parsed);
   return parsed;
+}
+
+/**
+ * Return a new config with `category` (and optionally `subcategory`) folded in.
+ * Pure — does not mutate `config`.
+ *
+ *  - unknown category  -> appended; `subcategory` is required and becomes its first
+ *  - known category    -> `subcategory` appended if given and not already present
+ *  - everything already present -> unchanged
+ *
+ * Matching is case-insensitive; names are trimmed. New entries go at the end.
+ */
+export function addToCategories(
+  config: CategoriesConfig,
+  input: { category: string; subcategory?: string },
+): CategoriesConfig {
+  const categoryName = input.category.trim();
+  const subcategoryName = input.subcategory?.trim() ?? "";
+
+  if (!categoryName) {
+    throw new CategoriesConfigError("Category name is required.");
+  }
+
+  const categories = config.categories.map((c) => ({
+    name: c.name,
+    subcategories: [...c.subcategories],
+  }));
+
+  const existing = categories.find(
+    (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
+  );
+
+  if (existing) {
+    const known = existing.subcategories.some(
+      (s) => s.toLowerCase() === subcategoryName.toLowerCase(),
+    );
+    if (subcategoryName && !known) {
+      existing.subcategories.push(subcategoryName);
+    }
+  } else {
+    if (!subcategoryName) {
+      throw new CategoriesConfigError(
+        `New category "${categoryName}" needs a subcategory.`,
+      );
+    }
+    categories.push({ name: categoryName, subcategories: [subcategoryName] });
+  }
+
+  const next = { categories };
+  validate(next);
+  return next;
+}
+
+/** Overwrite `config/categories.json` (server-only). Validates first. */
+export async function writeCategoriesConfig(
+  config: CategoriesConfig,
+): Promise<void> {
+  validate(config);
+  await writeFile(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 function validate(config: CategoriesConfig): void {
