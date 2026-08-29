@@ -10,6 +10,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 interface Props {
   label: string;
@@ -67,16 +68,6 @@ export default function CategoryPicker({
         />
         <CommandList>
           <CommandGroup>
-            {showCreate && (
-              <CommandItem
-                key="__create__"
-                value={`__create__ ${trimmed}`}
-                onSelect={() => onCreate?.(trimmed)}
-              >
-                <PlusIcon className="size-4 shrink-0" />
-                <span className="truncate">Create &ldquo;{trimmed}&rdquo;</span>
-              </CommandItem>
-            )}
             {filtered.map((option) => (
               <CommandItem
                 key={option}
@@ -90,6 +81,20 @@ export default function CategoryPicker({
                 )}
               </CommandItem>
             ))}
+            {showCreate && (
+              <CommandItem
+                key="__create__"
+                value={`__create__ ${trimmed}`}
+                onSelect={() => onCreate?.(trimmed)}
+                className={cn(
+                  "text-muted-foreground",
+                  filtered.length > 0 && "mt-1 border-t pt-2",
+                )}
+              >
+                <PlusIcon className="size-4 shrink-0" />
+                <span className="truncate">Create &ldquo;{trimmed}&rdquo;</span>
+              </CommandItem>
+            )}
             {filtered.length === 0 && !showCreate && (
               <div className="text-muted-foreground py-6 text-center text-sm">
                 No matches.
