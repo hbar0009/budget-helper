@@ -1,16 +1,18 @@
 /**
- * Loads and validates `config/categories.json` — your category / subcategory
- * taxonomy for the review card.
+ * Loads and validates the category / subcategory taxonomy for the review card.
  *
- * Unlike `config/accounts.json`, this file has nothing sensitive in it, so it
- * is committed and meant to be edited directly.
+ * The live file is `data/<profile>/config/categories.json` (see
+ * `../config/paths.ts`; override with `BUDGET_CATEGORIES_PATH`) — the app writes
+ * back to it as you add categories. `config/categories.example.json` is the
+ * committed starting taxonomy to seed a new profile from.
  *
  * `loadCategoriesConfig` is server-only (reads the filesystem);
  * `parseCategoriesConfig` is pure and unit-tested.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { CATEGORIES_PATH as CONFIG_PATH } from "../config/paths.ts";
 
 export interface Category {
   name: string;
@@ -28,16 +30,14 @@ export class CategoriesConfigError extends Error {
   }
 }
 
-const CONFIG_PATH = path.join(process.cwd(), "config", "categories.json");
-
 export async function loadCategoriesConfig(): Promise<CategoriesConfig> {
   let raw: string;
   try {
     raw = await readFile(CONFIG_PATH, "utf8");
   } catch {
     throw new CategoriesConfigError(
-      "No config/categories.json found. Restore it from version control or " +
-        "create one with a `categories` array.",
+      `No categories config at ${CONFIG_PATH}. Copy ` +
+        "config/categories.example.json there (or run `npm run seed:dev`).",
     );
   }
   return parseCategoriesConfig(raw);
@@ -107,11 +107,12 @@ export function addToCategories(
   return next;
 }
 
-/** Overwrite `config/categories.json` (server-only). Validates first. */
+/** Overwrite the profile's categories.json (server-only). Validates first. */
 export async function writeCategoriesConfig(
   config: CategoriesConfig,
 ): Promise<void> {
   validate(config);
+  await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeFile(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 

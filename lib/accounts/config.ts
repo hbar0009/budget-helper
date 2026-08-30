@@ -2,12 +2,14 @@
  * Loads and validates `config/accounts.json` — the list of your bank accounts
  * and where each group's data should be written.
  *
- * Server-only (reads the filesystem). `config/accounts.json` is gitignored;
- * `config/accounts.example.json` is the template to copy.
+ * Server-only (reads the filesystem). Lives at
+ * `data/<profile>/config/accounts.json` (see `../config/paths.ts`; override with
+ * `BUDGET_ACCOUNTS_PATH`); `config/accounts.example.json` is the committed
+ * template to copy.
  */
 
 import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { ACCOUNTS_PATH as CONFIG_PATH } from "../config/paths.ts";
 
 export type AccountType = "everyday" | "savings";
 
@@ -57,16 +59,14 @@ export class AccountsConfigError extends Error {
   }
 }
 
-const CONFIG_PATH = path.join(process.cwd(), "config", "accounts.json");
-
 export async function loadAccountsConfig(): Promise<AccountsConfig> {
   let raw: string;
   try {
     raw = await readFile(CONFIG_PATH, "utf8");
   } catch {
     throw new AccountsConfigError(
-      "No config/accounts.json found. Copy config/accounts.example.json to " +
-        "config/accounts.json and fill in your accounts.",
+      `No accounts config at ${CONFIG_PATH}. Copy config/accounts.example.json ` +
+        "there and fill in your accounts.",
     );
   }
   return parseAccountsConfig(raw);

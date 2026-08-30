@@ -3,20 +3,17 @@
  * matching on the `id` column so a re-push updates rows in place.
  *
  * Server-only. Auth is a Google service-account key JSON at
- * `config/service-account.json` (gitignored; override with
- * `BUDGET_GOOGLE_KEY_PATH`); share the target sheet with the key's
+ * `data/<profile>/config/service-account.json` (see `../config/paths.ts`;
+ * override with `BUDGET_GOOGLE_KEY_PATH`); share the target sheet with the key's
  * `client_email`. All the diff logic lives in `plan.ts` — this file only talks
  * to the Sheets v4 REST API.
  */
 
 import path from "node:path";
 import { GoogleAuth } from "google-auth-library";
+import { GOOGLE_KEY_PATH as KEY_PATH } from "../config/paths.ts";
 import { type Cell, planSheetWrite } from "./plan.ts";
 import { type PushResult, type Sink, SinkError, type SinkRow } from "./types.ts";
-
-const KEY_PATH =
-  process.env.BUDGET_GOOGLE_KEY_PATH ??
-  path.join(process.cwd(), "config", "service-account.json");
 
 const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";

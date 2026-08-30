@@ -2,16 +2,18 @@
  * Loads and validates `config/rules.json` — the auto-categorization rules
  * applied right after import.
  *
- * This file is likely personal (employer names, investment references), so it
- * is gitignored; `config/rules.example.json` is the template. A missing file is
- * fine — it just means no auto-categorization. The path can be overridden with
+ * This file is personal (employer names, investment references). It lives at
+ * `data/<profile>/config/rules.json` (see `../config/paths.ts`);
+ * `config/rules.example.json` is the committed template. A missing file is fine
+ * — it just means no auto-categorization. The path can be overridden with
  * `BUDGET_RULES_PATH` (used by tests so they never touch the real config).
  *
  * `parseRulesConfig` is pure and unit-tested; `loadRulesConfig` reads the disk.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { RULES_PATH as CONFIG_PATH } from "../config/paths.ts";
 import type { CategoriesConfig } from "../categories/config.ts";
 
 export type MatchDirection = "credit" | "debit";
@@ -45,10 +47,6 @@ export class RulesConfigError extends Error {
     this.name = "RulesConfigError";
   }
 }
-
-const CONFIG_PATH =
-  process.env.BUDGET_RULES_PATH ??
-  path.join(process.cwd(), "config", "rules.json");
 
 /** Missing file -> no rules. Malformed file -> throws `RulesConfigError`. */
 export async function loadRulesConfig(): Promise<RulesConfig> {
@@ -154,6 +152,7 @@ export async function writeRulesConfig(config: RulesConfig): Promise<void> {
     throw new RulesConfigError("`rules` must be an array.");
   }
   config.rules.forEach((rule, i) => validateRule(rule, i));
+  await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeFile(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 

@@ -43,9 +43,11 @@ token*.json
 /data/
 /statements/
 
-# personal config (account numbers, spreadsheet ids, rule patterns) — keep the .example
+# live config now lives under /data/<profile>/config/ (gitignored via /data/).
+# Only the *.example.json templates belong in /config/ — ignore any stray real copies.
 /config/accounts.json
 /config/rules.json
+/config/categories.json
 /config/service-account.json
 !/config/service-account.example.json
 

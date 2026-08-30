@@ -11,27 +11,53 @@ SQLite persistence, and the Google Sheets sink are built.
 
 ```bash
 npm install
-cp config/accounts.example.json config/accounts.json   # then edit it
-cp config/rules.example.json config/rules.json          # optional — auto-categorization
-cp config/service-account.example.json config/service-account.json  # optional — Google Sheets push
-npm run dev
+mkdir -p data/prod/config
+cp config/accounts.example.json      data/prod/config/accounts.json         # then edit it
+cp config/categories.example.json    data/prod/config/categories.json       # starting taxonomy
+cp config/rules.example.json         data/prod/config/rules.json            # optional — auto-categorization
+cp config/service-account.example.json data/prod/config/service-account.json # optional — Google Sheets push
+npm run build && npm start
 ```
 
-Then open http://localhost:3000. `config/accounts.json` and `config/rules.json`
-are gitignored (account numbers, spreadsheet ids, employer names); each has a
-committed `.example`. `config/categories.json` is committed — edit it directly to
-change the taxonomy, or add entries from the Categorize screen (the app writes
-back to this file).
+Then open http://localhost:3000. The live config and database live under
+`data/<profile>/` — `prod` for real use, `dev` for feature work (see
+[Dev vs prod](#dev-vs-prod)). Everything under `data/` is gitignored (account
+numbers, spreadsheet ids, employer names, your transaction record); `config/`
+holds only the committed `*.example.json` templates. Add categories from the
+Categorize screen too — the app writes back to the profile's `categories.json`.
 
 ## Scripts
 
 | Command | Does |
 |---|---|
-| `npm run dev` | Start the dev server with hot reload |
+| `npm run dev` | Dev server + hot reload, on the **`dev`** profile |
 | `npm run build` | Production build |
-| `npm start` | Serve the production build |
+| `npm start` | Serve the production build, on the **`prod`** profile |
+| `npm run seed:dev` | Reset `data/dev/` to a fresh copy of `data/prod/` |
 | `npm run lint` | Lint |
 | `npm test` | Run unit tests (`node --test`) |
+
+## Dev vs prod
+
+`BUDGET_PROFILE` selects a data profile so feature work never risks your real
+transaction record. Everything stateful — the SQLite database **and** the
+mutable configs (`accounts`, `categories`, `rules`, `service-account`) — lives
+under `data/<profile>/`:
+
+| Profile | Set by | State dir |
+|---|---|---|
+| `dev` | `npm run dev` | `data/dev/` |
+| `prod` | `npm start` (and the default for anything else, incl. tests) | `data/prod/` |
+
+`npm run seed:dev` wipes `data/dev/` and recursively copies `data/prod/` into
+it, so dev starts from a realistic snapshot. After seeding, point
+`data/dev/config/accounts.json` at fake account numbers and a dev/bogus sink so
+a stray **Push to Sheets** in dev can't reach your real spreadsheets.
+
+Resolution order for each path (`lib/config/paths.ts`): an explicit
+`BUDGET_DB_PATH` / `BUDGET_RULES_PATH` / `BUDGET_ACCOUNTS_PATH` /
+`BUDGET_CATEGORIES_PATH` / `BUDGET_GOOGLE_KEY_PATH` wins (this is how the unit
+tests stay isolated); otherwise it's `data/<profile>/…`.
 
 ## Import flow
 
@@ -75,8 +101,8 @@ Review`, driven by `app/page.tsx`):
   subcategory auto-advances. If your text matches nothing, a
   **Create "…"** row appears — selecting it adds the category/subcategory (a new
   category is written only once you name its first subcategory) and `POST`s it to
-  `config/categories.json` so it sticks for later sessions. New entries append to
-  the end; renaming/deleting is done by editing the file.
+  the profile's `categories.json` so it sticks for later sessions. New entries
+  append to the end; renaming/deleting is done by editing the file.
 - **Review** — per-group (`personal` / `shared`) net totals broken down by
   category → subcategory, plus counts of skipped / pending / netted / cross-group
   rows, a list of skipped transactions, and a **Needs follow-up** section (see
@@ -184,8 +210,9 @@ group is pushed independently, so one failing (bad config, auth) still pushes th
 other and the response reports per-group `{ added, updated, unchanged }` or
 `{ error }`.
 
-**Auth.** A Google service-account key JSON at `config/service-account.json`
-(gitignored; copy `config/service-account.example.json`, override the path with
+**Auth.** A Google service-account key JSON at
+`data/<profile>/config/service-account.json` (copy
+`config/service-account.example.json` there, override the path with
 `BUDGET_GOOGLE_KEY_PATH`). In Google Cloud: create a service account, enable the
 Google Sheets API, add a JSON key; then **share each target spreadsheet with the
 key's `client_email`** as an Editor. `spreadsheetId` and `tab` go in the group's
@@ -200,7 +227,8 @@ key's `client_email`** as an Editor. `spreadsheetId` and `tab` go in the group's
 ## Persistence
 
 Imported transactions and their categorizations live in a local SQLite database
-(`data/budget-helper.db`, gitignored; override the path with `BUDGET_DB_PATH`).
+(`data/<profile>/budget-helper.db`, gitignored; see [Dev vs prod](#dev-vs-prod),
+override the path with `BUDGET_DB_PATH`).
 The client holds no durable state — it reads the working set from
 `GET /api/transactions` on load and picks the stage from it (pending rows →
 Categorize, otherwise → Review or Import).
@@ -217,14 +245,16 @@ keeps the native addon unbundled. The connection singleton is in `lib/db/`;
 query functions take an explicit `db` and are unit-tested against `:memory:`.
 
 Aggregation logic lives in `lib/transactions/summary.ts` (pure, unit-tested);
-the taxonomy is `config/categories.json`, read via `GET /api/categories` and
+the taxonomy is `data/<profile>/config/categories.json` (seeded from the
+committed `config/categories.example.json`), read via `GET /api/categories` and
 extended via `POST /api/categories` (`{ category, subcategory? }` — pure
 `addToCategories` in `lib/categories/config.ts`, unit-tested).
 
 ## Auto-categorization
 
-`config/rules.json` (gitignored; `.example` committed) holds an ordered list of
-rules — **first match wins**, so order them most- to least-important:
+`data/<profile>/config/rules.json` (seeded from the committed
+`config/rules.example.json`) holds an ordered list of rules — **first match
+wins**, so order them most- to least-important:
 
 ```jsonc
 { "label": "Salary", "contains": "ACME PAYROLL", "direction": "credit",
@@ -250,7 +280,7 @@ pre-filled from the transaction on screen: match text (defaults to the
 description — trim it to the stable part), category, and subcategory, with an
 **Advanced options** panel for regex, direction, account, an absolute amount
 range, and a label. Saving `POST`s to `/api/rules`, which appends the rule to
-`config/rules.json` (created if absent) and immediately runs the whole ruleset
+the profile's `rules.json` (created if absent) and immediately runs the whole ruleset
 over the pending rows — matching rows leave the deck, and the card you were on is
 claimed by the rule even if you'd already set it by hand. Set `BUDGET_RULES_PATH`
 to point the loader/writer somewhere else (tests use this).
@@ -267,7 +297,10 @@ component source under `components/ui/`). `components.json` configures the
 `app/globals.css` and follow the OS light/dark setting via a media query — no
 `next-themes`, no toggle. `lib/utils.ts` has the `cn` helper.
 
-## Config: `config/accounts.json`
+## Config: `accounts.json`
+
+Lives at `data/<profile>/config/accounts.json` (seeded from
+`config/accounts.example.json`; override with `BUDGET_ACCOUNTS_PATH`).
 
 - `accounts[]` — `id`, `label`, `number` (drives transfer detection), `type`,
   `group`, and optional `spending` (bool — is money paid out of this account?
@@ -308,6 +341,8 @@ components/
   FollowUpSection, ReimbursementSection, StatCard
 hooks/useCategories.ts    Fetch the taxonomy
 hooks/useAccounts.ts      Fetch the account list
+scripts/seed-dev.ts       Reset data/dev/ to a copy of data/prod/
+lib/config/paths.ts       BUDGET_PROFILE -> db + config paths (dev/prod), env overrides
 lib/utils.ts              cn() class-name helper
 lib/format.ts             Money formatting
 lib/db/
@@ -317,18 +352,18 @@ lib/db/
   flags.ts                Flag CRUD + resolve/reopen (wrong-account, notes), tested vs :memory:
   reimbursements.ts       Claim + repayment CRUD (per-person "owes you", auto-settle), tested vs :memory:
 lib/rules/
-  config.ts               Load / validate / append / write config/rules.json (pure fns tested)
+  config.ts               Load / validate / append / write the profile's rules.json (pure fns tested)
   apply.ts                applyRules(transactions, rules) -> RuleMatch[] (pure, tested)
   run.ts                  Run rules over the DB's pending rows
 lib/accounts/
-  config.ts               Load / parse / validate config/accounts.json (+ isSpendingAccount), tested
+  config.ts               Load / parse / validate the profile's accounts.json (+ isSpendingAccount), tested
 lib/sink/
   rows.ts                 buildSinkRowsByGroup(transactions, accounts) -> per-group SinkRow[] (pure, tested)
   plan.ts                 planSheetWrite(existing, desired) -> minimal header/update/append writes (the upsert; pure, tested)
   sheets.ts               google-sheets sink: Sheets v4 REST via google-auth-library + fetch
   index.ts                sinkFor(sinkConfig) -> Sink, on `kind`
 lib/categories/
-  config.ts               Load / validate / mutate / write config/categories.json (pure fns tested)
+  config.ts               Load / validate / mutate / write the profile's categories.json (pure fns tested)
 lib/transactions/
   types.ts                Canonical shapes for each pipeline stage
   id.ts                   Content-hash helper for row ids
@@ -338,14 +373,17 @@ lib/transactions/
   reconcile.ts            Stage 3: classify inter-account transfers
   summary.ts              Deck filtering + review aggregation (pure)
   *.test.ts               Unit tests
-config/
-  accounts.example.json   Template (committed)
-  accounts.json           Your real config (gitignored)
-  categories.json         Category / subcategory taxonomy (committed, edit freely)
-  rules.example.json      Template (committed)
-  rules.json              Your auto-categorization rules (gitignored, optional)
-  service-account.example.json  Template for the Google key (committed)
-  service-account.json    Your Google service-account key (gitignored)
+config/                   committed templates only
+  accounts.example.json
+  categories.example.json  Starting category / subcategory taxonomy
+  rules.example.json
+  service-account.example.json
+data/                     gitignored — one dir per profile (see Dev vs prod)
+  prod/
+    budget-helper.db      Your transaction record (SQLite)
+    config/
+      accounts.json  categories.json  rules.json  service-account.json
+  dev/                    same shape; `npm run seed:dev` fills it from prod/
 ```
 
 ## Adding another bank

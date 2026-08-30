@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "BUDGET_PROFILE=dev next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "BUDGET_PROFILE=prod next start",
+    "seed:dev": "node scripts/seed-dev.ts",
     "lint": "next lint",
     "test": "node --test \"lib/**/*.test.ts\""
   },
