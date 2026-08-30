@@ -7,7 +7,7 @@
 
 import type Database from "better-sqlite3";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const V1 = `
 CREATE TABLE IF NOT EXISTS transactions (
@@ -33,12 +33,17 @@ CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions (status);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (date);
 `;
 
+// v2: track how a row was categorized (a rule, or by hand) and which rule.
+const V2 = `
+ALTER TABLE transactions ADD COLUMN categorized_by TEXT;
+ALTER TABLE transactions ADD COLUMN rule_label TEXT;
+`;
+
 export function migrate(db: Database.Database): void {
   const version = db.pragma("user_version", { simple: true }) as number;
 
-  if (version < 1) {
-    db.exec(V1);
-  }
+  if (version < 1) db.exec(V1);
+  if (version < 2) db.exec(V2);
 
   db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }

@@ -12,13 +12,15 @@ local SQLite persistence are built. Spreadsheet sync is not started.
 ```bash
 npm install
 cp config/accounts.example.json config/accounts.json   # then edit it
+cp config/rules.example.json config/rules.json          # optional — auto-categorization
 npm run dev
 ```
 
-Then open http://localhost:3000. `config/accounts.json` is gitignored (it holds
-your account numbers and spreadsheet ids); the `.example` is the template.
-`config/categories.json` is committed — edit it directly to change the taxonomy,
-or add entries from the Categorize screen (the app writes back to this file).
+Then open http://localhost:3000. `config/accounts.json` and `config/rules.json`
+are gitignored (account numbers, spreadsheet ids, employer names); each has a
+committed `.example`. `config/categories.json` is committed — edit it directly to
+change the taxonomy, or add entries from the Categorize screen (the app writes
+back to this file).
 
 ## Scripts
 
@@ -100,6 +102,33 @@ the taxonomy is `config/categories.json`, read via `GET /api/categories` and
 extended via `POST /api/categories` (`{ category, subcategory? }` — pure
 `addToCategories` in `lib/categories/config.ts`, unit-tested).
 
+## Auto-categorization
+
+`config/rules.json` (gitignored; `.example` committed) holds an ordered list of
+rules — **first match wins**, so order them most- to least-important:
+
+```jsonc
+{ "label": "Salary", "contains": "ACME PAYROLL", "direction": "credit",
+  "minAmount": 1000, "category": "Income", "subcategory": "Salary" }
+```
+
+Each rule has exactly one of `contains` (case-insensitive substring) or `regex`
+(case-insensitive), matched on the raw description; optional narrowing by
+`direction`, `account`, and `minAmount`/`maxAmount` (on the *absolute* amount);
+and a `category` + `subcategory` that must exist in `config/categories.json` (a
+rule pointing elsewhere is skipped with a warning, not a hard error).
+
+`POST /api/import` runs the rules over every `pending` row right after upsert and
+sets matches to `status='categorized'`, `categorized_by='rule'`. If any matched,
+the flow inserts an **Auto-review** step before Categorize showing the matches
+grouped by rule, each with undo (→ back to `pending`) and a **Re-run rules**
+button (`POST /api/rules/apply`). Re-runs only touch `pending` rows, so manual
+and accepted categorizations are safe.
+
+- `lib/rules/config.ts` — load + validate (`parseRulesConfig`, `validateRulesAgainstCategories`), pure/tested
+- `lib/rules/apply.ts` — `applyRules(transactions, rules) → RuleMatch[]`, pure/tested
+- `lib/rules/run.ts` — bridges the above to the DB over `pending` rows
+
 ## UI stack
 
 Tailwind CSS v4 + [shadcn/ui](https://ui.shadcn.com) (Radix primitives, owned
@@ -124,12 +153,13 @@ app/
   globals.css             Tailwind v4 + shadcn theme tokens (OS light/dark)
   api/accounts/route.ts   GET the account list for the UI
   api/categories/route.ts GET the taxonomy / POST a new category or subcategory
-  api/import/route.ts     POST files + accountIds -> parse, reconcile, upsert into the DB
+  api/import/route.ts     POST files + accountIds -> parse, reconcile, upsert, auto-categorize
   api/transactions/route.ts        GET stored rows (+?status=) / DELETE all
-  api/transactions/[id]/route.ts   PATCH one row's categorization
+  api/transactions/[id]/route.ts   PATCH one row (categorize / skip / undo)
+  api/rules/apply/route.ts         POST — re-run rules over pending rows
 components/
   ui/                     shadcn primitives (button, card, select, command, ...)
-  AppHeader, Stepper, ImportStage, CategorizeStage,
+  AppHeader, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
   TransactionCard, CategoryPicker, ReviewStage, StatCard
 hooks/useCategories.ts    Fetch the taxonomy
 lib/utils.ts              cn() class-name helper
@@ -137,7 +167,11 @@ lib/format.ts             Money formatting
 lib/db/
   index.ts                SQLite connection singleton (better-sqlite3)
   schema.ts               Schema + user_version migrations
-  transactions.ts         Typed queries (upsert / list / setCategorization / ...), tested vs :memory:
+  transactions.ts         Typed queries (upsert / list / setCategorization / applyRuleCategorizations / ...), tested vs :memory:
+lib/rules/
+  config.ts               Load + validate config/rules.json (pure fns tested)
+  apply.ts                applyRules(transactions, rules) -> RuleMatch[] (pure, tested)
+  run.ts                  Run rules over the DB's pending rows
 lib/accounts/
   config.ts               Load + validate config/accounts.json
 lib/categories/
@@ -155,6 +189,8 @@ config/
   accounts.example.json   Template (committed)
   accounts.json           Your real config (gitignored)
   categories.json         Category / subcategory taxonomy (committed, edit freely)
+  rules.example.json      Template (committed)
+  rules.json              Your auto-categorization rules (gitignored, optional)
 ```
 
 ## Adding another bank
@@ -168,5 +204,6 @@ Add a `BankProfile` to `lib/transactions/profiles.ts` and push it onto
 2. ~~Multi-account upload + inter-account transfer reconciliation.~~ Done.
 3. ~~Per-transaction review card: assign category / subcategory, plus review screen.~~ Done.
 4. ~~Persist transactions + categorizations locally (SQLite).~~ Done.
-5. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.
-6. Reimbursement / split-expense tracking (design agreed; see notes).
+5. ~~Auto-categorization from `config/rules.json` + an auto-review step.~~ Done.
+6. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.
+7. Reimbursement / split-expense tracking (design agreed; see notes).

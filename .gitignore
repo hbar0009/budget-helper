@@ -43,8 +43,9 @@ token*.json
 /data/
 /statements/
 
-# personal config (account numbers, spreadsheet ids) — keep the .example
+# personal config (account numbers, spreadsheet ids, rule patterns) — keep the .example
 /config/accounts.json
+/config/rules.json
 
 # editor / OS
 .vscode/*

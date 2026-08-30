@@ -1,19 +1,11 @@
 {
   "categories": [
     {
-      "name": "Groceries",
+      "name": "Food and Drink",
       "subcategories": [
-        "Supermarket",
-        "Liquor"
-      ]
-    },
-    {
-      "name": "Eating Out",
-      "subcategories": [
-        "Restaurant",
-        "Cafe",
-        "Takeaway",
-        "Other"
+        "Groceries",
+        "Liquor",
+        "Eating Out"
       ]
     },
     {
@@ -83,7 +75,8 @@
         "Green Fees",
         "Driving Range",
         "Clubs",
-        "Lessons"
+        "Lessons",
+        "Simulator"
       ]
     },
     {

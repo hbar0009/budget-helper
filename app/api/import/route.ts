@@ -4,8 +4,18 @@ import {
   accountMap,
   loadAccountsConfig,
 } from "@/lib/accounts/config";
+import {
+  CategoriesConfigError,
+  loadCategoriesConfig,
+} from "@/lib/categories/config";
 import { getDb } from "@/lib/db";
 import { statusCounts, upsertTransactions } from "@/lib/db/transactions";
+import {
+  RulesConfigError,
+  loadRulesConfig,
+  validateRulesAgainstCategories,
+} from "@/lib/rules/config";
+import { runRulesOverPending } from "@/lib/rules/run";
 import { assignAccount } from "@/lib/transactions/assign";
 import { CsvImportError, parseCsv } from "@/lib/transactions/parse";
 import { reconcileTransfers } from "@/lib/transactions/reconcile";
@@ -98,10 +108,34 @@ export async function POST(request: Request): Promise<Response> {
     new Date().toISOString(),
   );
 
+  // Auto-categorization. A broken or missing rules file never blocks an import.
+  let autoCategorized = 0;
+  let ruleWarnings: string[] = [];
+  try {
+    const { rules } = await loadRulesConfig();
+    if (rules.length > 0) {
+      const categories = await loadCategoriesConfig();
+      const { valid, warnings } = validateRulesAgainstCategories(
+        rules,
+        categories,
+      );
+      ruleWarnings = warnings;
+      autoCategorized = runRulesOverPending(db, valid).matched;
+    }
+  } catch (err) {
+    if (err instanceof RulesConfigError || err instanceof CategoriesConfigError) {
+      ruleWarnings = [err.message];
+    } else {
+      throw err;
+    }
+  }
+
   return NextResponse.json({
     batch: { total: transactions.length, inserted, alreadyPresent },
     transfers: summary,
     counts: statusCounts(db),
+    autoCategorized,
+    ruleWarnings,
     errors,
   });
 }

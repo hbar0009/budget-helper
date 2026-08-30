@@ -38,6 +38,8 @@ interface ImportResponse {
   batch: { total: number; inserted: number; alreadyPresent: number };
   transfers: TransferSummary;
   counts: { pending: number; categorized: number; skipped: number };
+  autoCategorized: number;
+  ruleWarnings: string[];
   errors: ImportRowError[];
 }
 
@@ -212,7 +214,8 @@ function ImportSummary({
   onContinue: () => void;
   onDiscard: () => void;
 }) {
-  const { batch, transfers, counts, errors } = result;
+  const { batch, transfers, counts, autoCategorized, ruleWarnings, errors } =
+    result;
 
   return (
     <Card>
@@ -233,13 +236,29 @@ function ImportSummary({
           />
           <StatCard label="Netted pairs" value={transfers.nettedPairs} hint="excluded" />
           <StatCard label="Cross-group" value={transfers.crossGroupPairs} hint="kept" />
-          <StatCard label="Unmatched" value={transfers.unmatched} hint="review" />
+          <StatCard
+            label="Auto-categorized"
+            value={autoCategorized}
+            hint="by rules"
+          />
         </div>
 
         <p className="text-muted-foreground text-sm">
           {counts.pending} transaction{counts.pending === 1 ? "" : "s"} waiting to
           be categorized.
         </p>
+
+        {ruleWarnings.length > 0 && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              <ul className="list-disc pl-4">
+                {ruleWarnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {errors.length > 0 && (
           <Alert variant="destructive">
@@ -256,7 +275,7 @@ function ImportSummary({
         )}
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onContinue}>Categorize →</Button>
+          <Button onClick={onContinue}>Continue →</Button>
           <Button variant="ghost" onClick={onDiscard}>
             Import more files
           </Button>

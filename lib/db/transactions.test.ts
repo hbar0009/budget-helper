@@ -4,9 +4,11 @@ import Database from "better-sqlite3";
 
 import { migrate } from "./schema.ts";
 import {
+  applyRuleCategorizations,
   deleteAllTransactions,
   getTransaction,
   listTransactions,
+  resetCategorization,
   setCategorization,
   statusCounts,
   upsertTransactions,
@@ -90,12 +92,49 @@ test("setCategorization sets fields; skip clears them", () => {
   })!;
   assert.equal(categorized.status, "categorized");
   assert.equal(categorized.subcategory, "Cafe / Coffee");
+  assert.equal(categorized.categorizedBy, "manual");
   assert.ok(categorized.categorizedAt);
 
   const skipped = setCategorization(db, a.id, null)!;
   assert.equal(skipped.status, "skipped");
   assert.equal(skipped.category, null);
   assert.equal(skipped.subcategory, null);
+  assert.equal(skipped.categorizedBy, null);
+});
+
+test("applyRuleCategorizations tags pending rows and skips non-pending ones", () => {
+  const db = freshDb();
+  upsertTransactions(
+    db,
+    [txn({ id: "a", amount: -5 }), txn({ id: "b", amount: -6 })],
+    "now",
+  );
+  setCategorization(db, "b", { category: "Manual", subcategory: "Manual" });
+
+  const changed = applyRuleCategorizations(db, [
+    { transactionId: "a", ruleIndex: 0, label: "R", category: "Income", subcategory: "Salary" },
+    { transactionId: "b", ruleIndex: 1, label: "R2", category: "Other", subcategory: "Other" },
+  ]);
+
+  assert.equal(changed, 1);
+  const a = getTransaction(db, "a")!;
+  assert.equal(a.status, "categorized");
+  assert.equal(a.categorizedBy, "rule");
+  assert.equal(a.ruleLabel, "R");
+  assert.equal(getTransaction(db, "b")!.subcategory, "Manual"); // untouched
+});
+
+test("resetCategorization sends a row back to pending and clears everything", () => {
+  const db = freshDb();
+  upsertTransactions(db, [txn({ id: "x", amount: -5 })], "now");
+  setCategorization(db, "x", { category: "Income", subcategory: "Salary" });
+
+  const reset = resetCategorization(db, "x")!;
+  assert.equal(reset.status, "pending");
+  assert.equal(reset.category, null);
+  assert.equal(reset.categorizedBy, null);
+  assert.equal(reset.ruleLabel, null);
+  assert.equal(reset.categorizedAt, null);
 });
 
 test("setCategorization returns undefined for an unknown id", () => {

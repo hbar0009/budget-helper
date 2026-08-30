@@ -4,38 +4,41 @@ import { CheckIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type Stage = "import" | "categorize" | "review";
+export type Stage = "import" | "autoReview" | "categorize" | "review";
 
-const STEPS: { key: Stage; label: string }[] = [
-  { key: "import", label: "Import" },
-  { key: "categorize", label: "Categorize" },
-  { key: "review", label: "Review" },
-];
+const LABELS: Record<Stage, string> = {
+  import: "Import",
+  autoReview: "Auto-review",
+  categorize: "Categorize",
+  review: "Review",
+};
 
 interface Props {
   stage: Stage;
-  /** True once transactions have been imported (steps 2 and 3 become reachable). */
+  /** The steps to show, in order. */
+  stages: Stage[];
+  /** True once transactions have been imported (later steps become reachable). */
   unlocked: boolean;
   onNavigate: (stage: Stage) => void;
 }
 
-export default function Stepper({ stage, unlocked, onNavigate }: Props) {
-  const activeIndex = STEPS.findIndex((s) => s.key === stage);
+export default function Stepper({ stage, stages, unlocked, onNavigate }: Props) {
+  const activeIndex = stages.indexOf(stage);
 
   return (
     <nav className="mb-6 flex gap-2" aria-label="Progress">
-      {STEPS.map((step, i) => {
+      {stages.map((key, i) => {
         const state =
           i === activeIndex ? "active" : i < activeIndex ? "done" : "upcoming";
-        const clickable = unlocked && step.key !== "import" && i !== activeIndex;
+        const clickable = unlocked && key !== "import" && i !== activeIndex;
 
         return (
           <button
-            key={step.key}
+            key={key}
             type="button"
             aria-current={i === activeIndex ? "step" : undefined}
             disabled={!clickable}
-            onClick={() => clickable && onNavigate(step.key)}
+            onClick={() => clickable && onNavigate(key)}
             className={cn(
               "flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
               state === "active" && "border-primary ring-primary/40 ring-1",
@@ -54,7 +57,7 @@ export default function Stepper({ stage, unlocked, onNavigate }: Props) {
             >
               {state === "done" ? <CheckIcon className="size-3" /> : i + 1}
             </span>
-            {step.label}
+            {LABELS[key]}
           </button>
         );
       })}

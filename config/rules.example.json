@@ -1,0 +1,25 @@
+{
+  "rules": [
+    {
+      "label": "Salary",
+      "contains": "REPLACE WITH YOUR EMPLOYER NAME",
+      "direction": "credit",
+      "minAmount": 1000,
+      "category": "Income",
+      "subcategory": "Salary"
+    },
+    {
+      "label": "Rent",
+      "regex": "RENT.*PROPERTY|PROPERTY.*RENT",
+      "direction": "debit",
+      "category": "Housing",
+      "subcategory": "Rent"
+    },
+    {
+      "label": "Spotify",
+      "contains": "SPOTIFY",
+      "category": "Entertainment",
+      "subcategory": "Streaming Services"
+    }
+  ]
+}

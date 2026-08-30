@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { getTransaction, setCategorization } from "@/lib/db/transactions";
+import {
+  getTransaction,
+  resetCategorization,
+  setCategorization,
+} from "@/lib/db/transactions";
 
 export const runtime = "nodejs";
 
 /**
  * PATCH /api/transactions/:id
  *
- * Body: `{ category, subcategory }` to categorize, or `{ status: "skipped" }`.
- * Returns the updated row.
+ * Body: `{ category, subcategory }` to categorize, `{ status: "skipped" }`, or
+ * `{ status: "pending" }` to undo. Returns the updated row.
  */
 export async function PATCH(
   request: Request,
@@ -32,6 +36,10 @@ export async function PATCH(
     return NextResponse.json(setCategorization(db, id, null));
   }
 
+  if (body.status === "pending") {
+    return NextResponse.json(resetCategorization(db, id));
+  }
+
   if (
     typeof body.category === "string" &&
     body.category.length > 0 &&
@@ -47,7 +55,10 @@ export async function PATCH(
   }
 
   return NextResponse.json(
-    { error: 'Provide { category, subcategory } or { status: "skipped" }.' },
+    {
+      error:
+        'Provide { category, subcategory } or { status: "skipped" | "pending" }.',
+    },
     { status: 400 },
   );
 }

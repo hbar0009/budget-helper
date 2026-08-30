@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
+import AutoReviewStage from "@/components/AutoReviewStage";
 import CategorizeStage from "@/components/CategorizeStage";
 import ImportStage from "@/components/ImportStage";
 import ReviewStage from "@/components/ReviewStage";
@@ -18,6 +19,7 @@ export default function HomePage() {
   const [stage, setStage] = useState<Stage>("import");
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<StoredTransaction[] | null> => {
     try {
@@ -34,14 +36,19 @@ export default function HomePage() {
     }
   }, []);
 
+  const firstPendingDeckIndex = (rows: StoredTransaction[]): number => {
+    const deck = rows.filter((t) => t.transferState !== "netted");
+    const at = deck.findIndex((t) => t.status === "pending");
+    return at >= 0 ? at : 0;
+  };
+
   // First load: pick the stage from what's already stored.
   useEffect(() => {
     load().then((rows) => {
       if (!rows) return;
       const deck = rows.filter((t) => t.transferState !== "netted");
-      const firstPending = deck.findIndex((t) => t.status === "pending");
-      if (firstPending >= 0) {
-        setIndex(firstPending);
+      if (deck.some((t) => t.status === "pending")) {
+        setIndex(firstPendingDeckIndex(rows));
         setStage("categorize");
       } else if (deck.length > 0) {
         setStage("review");
@@ -50,6 +57,21 @@ export default function HomePage() {
       }
     });
   }, [load]);
+
+  const hasAutoCategorized = (transactions ?? []).some(
+    (t) => t.categorizedBy === "rule",
+  );
+
+  const stages: Stage[] = hasAutoCategorized
+    ? ["import", "autoReview", "categorize", "review"]
+    : ["import", "categorize", "review"];
+
+  // If every auto-categorized row gets undone while we're on that screen, move on.
+  useEffect(() => {
+    if (stage === "autoReview" && transactions && !hasAutoCategorized) {
+      setStage("categorize");
+    }
+  }, [stage, transactions, hasAutoCategorized]);
 
   const categorizations: CategorizationMap = useMemo(() => {
     const map: CategorizationMap = {};
@@ -63,33 +85,16 @@ export default function HomePage() {
     return map;
   }, [transactions]);
 
-  const categorize = useCallback(
-    async (
-      id: string,
-      value: { category: string; subcategory: string } | null,
-    ) => {
-      // Optimistic: reflect the change immediately, reconcile with the server
-      // response, and reload on failure.
+  const patch = useCallback(
+    async (id: string, body: Record<string, unknown>, optimistic: StoredTransaction) => {
       setTransactions((prev) =>
-        (prev ?? []).map((t) =>
-          t.id !== id
-            ? t
-            : value
-              ? {
-                  ...t,
-                  status: "categorized",
-                  category: value.category,
-                  subcategory: value.subcategory,
-                }
-              : { ...t, status: "skipped", category: null, subcategory: null },
-        ),
+        (prev ?? []).map((t) => (t.id === id ? optimistic : t)),
       );
-
       try {
         const res = await fetch(`/api/transactions/${id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(value ?? { status: "skipped" }),
+          body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error();
         const updated = (await res.json()) as StoredTransaction;
@@ -104,12 +109,81 @@ export default function HomePage() {
     [load],
   );
 
+  const categorize = useCallback(
+    (id: string, value: { category: string; subcategory: string } | null) => {
+      const current = (transactions ?? []).find((t) => t.id === id);
+      if (!current) return;
+      const optimistic: StoredTransaction = value
+        ? {
+            ...current,
+            status: "categorized",
+            category: value.category,
+            subcategory: value.subcategory,
+            categorizedBy: "manual",
+            ruleLabel: null,
+          }
+        : {
+            ...current,
+            status: "skipped",
+            category: null,
+            subcategory: null,
+            categorizedBy: null,
+            ruleLabel: null,
+          };
+      void patch(id, value ?? { status: "skipped" }, optimistic);
+    },
+    [transactions, patch],
+  );
+
+  const undo = useCallback(
+    (id: string) => {
+      const current = (transactions ?? []).find((t) => t.id === id);
+      if (!current) return;
+      void patch(
+        id,
+        { status: "pending" },
+        {
+          ...current,
+          status: "pending",
+          category: null,
+          subcategory: null,
+          categorizedBy: null,
+          ruleLabel: null,
+        },
+      );
+    },
+    [transactions, patch],
+  );
+
   async function handleImported() {
     const rows = await load();
-    const deck = (rows ?? []).filter((t) => t.transferState !== "netted");
-    const firstPending = deck.findIndex((t) => t.status === "pending");
-    setIndex(firstPending >= 0 ? firstPending : 0);
-    setStage("categorize");
+    if (!rows) return;
+    if (rows.some((t) => t.categorizedBy === "rule")) {
+      setStage("autoReview");
+    } else {
+      setIndex(firstPendingDeckIndex(rows));
+      setStage("categorize");
+    }
+  }
+
+  async function handleRerun() {
+    setNotice(null);
+    try {
+      const res = await fetch("/api/rules/apply", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Could not re-run rules.");
+        return;
+      }
+      await load();
+      setNotice(
+        `Re-ran rules — ${data.matched} newly matched${
+          data.warnings?.length ? `, ${data.warnings.length} warning(s)` : ""
+        }.`,
+      );
+    } catch {
+      setError("Could not re-run rules.");
+    }
   }
 
   async function handleReset() {
@@ -123,6 +197,7 @@ export default function HomePage() {
     await fetch("/api/transactions", { method: "DELETE" });
     setTransactions([]);
     setIndex(0);
+    setNotice(null);
     setStage("import");
   }
 
@@ -134,6 +209,7 @@ export default function HomePage() {
       <main className="mx-auto max-w-3xl px-6 pt-7 pb-20">
         <Stepper
           stage={stage}
+          stages={stages}
           unlocked={unlocked}
           onNavigate={(next) => unlocked && setStage(next)}
         />
@@ -143,11 +219,26 @@ export default function HomePage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+        {notice && (
+          <Alert className="mb-4">
+            <AlertDescription>{notice}</AlertDescription>
+          </Alert>
+        )}
 
         {transactions === null ? (
           <p className="text-muted-foreground text-sm">Loading…</p>
         ) : stage === "import" ? (
           <ImportStage onImported={handleImported} />
+        ) : stage === "autoReview" ? (
+          <AutoReviewStage
+            transactions={transactions}
+            onUndo={undo}
+            onRerun={handleRerun}
+            onContinue={() => {
+              setIndex(firstPendingDeckIndex(transactions));
+              setStage("categorize");
+            }}
+          />
         ) : stage === "categorize" ? (
           <CategorizeStage
             transactions={transactions}

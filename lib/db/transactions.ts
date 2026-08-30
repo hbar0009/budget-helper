@@ -7,15 +7,20 @@
  */
 
 import type Database from "better-sqlite3";
+import type { RuleMatch } from "../rules/apply.ts";
 import type { ReconciledTransaction } from "../transactions/types.ts";
 
 export type TxnStatus = "pending" | "categorized" | "skipped" | "excluded";
+
+export type CategorizedBy = "rule" | "manual";
 
 /** A stored row: every reconciled field plus its categorization state. */
 export interface StoredTransaction extends ReconciledTransaction {
   status: TxnStatus;
   category: string | null;
   subcategory: string | null;
+  categorizedBy: CategorizedBy | null;
+  ruleLabel: string | null;
   importedAt: string;
   categorizedAt: string | null;
 }
@@ -35,6 +40,8 @@ interface Row {
   status: TxnStatus;
   category: string | null;
   subcategory: string | null;
+  categorized_by: CategorizedBy | null;
+  rule_label: string | null;
   imported_at: string;
   categorized_at: string | null;
 }
@@ -55,6 +62,8 @@ function toStored(row: Row): StoredTransaction {
     status: row.status,
     category: row.category,
     subcategory: row.subcategory,
+    categorizedBy: row.categorized_by,
+    ruleLabel: row.rule_label,
     importedAt: row.imported_at,
     categorizedAt: row.categorized_at,
   };
@@ -131,8 +140,8 @@ export function getTransaction(
 }
 
 /**
- * Categorize a transaction, or (with `null`) mark it skipped. Returns the
- * updated row, or `undefined` if the id is unknown.
+ * Categorize a transaction by hand, or (with `null`) mark it skipped. Clears any
+ * rule attribution. Returns the updated row, or `undefined` if the id is unknown.
  */
 export function setCategorization(
   db: Database.Database,
@@ -143,17 +152,66 @@ export function setCategorization(
   if (value === null) {
     db.prepare(
       `UPDATE transactions
-         SET status = 'skipped', category = NULL, subcategory = NULL, categorized_at = @now
+         SET status = 'skipped', category = NULL, subcategory = NULL,
+             categorized_by = NULL, rule_label = NULL, categorized_at = @now
        WHERE id = @id`,
     ).run({ id, now });
   } else {
     db.prepare(
       `UPDATE transactions
-         SET status = 'categorized', category = @category, subcategory = @subcategory, categorized_at = @now
+         SET status = 'categorized', category = @category, subcategory = @subcategory,
+             categorized_by = 'manual', rule_label = NULL, categorized_at = @now
        WHERE id = @id`,
     ).run({ id, now, category: value.category, subcategory: value.subcategory });
   }
   return getTransaction(db, id);
+}
+
+/** Send a transaction back to `pending`, clearing its categorization. */
+export function resetCategorization(
+  db: Database.Database,
+  id: string,
+): StoredTransaction | undefined {
+  db.prepare(
+    `UPDATE transactions
+       SET status = 'pending', category = NULL, subcategory = NULL,
+           categorized_by = NULL, rule_label = NULL, categorized_at = NULL
+     WHERE id = @id`,
+  ).run({ id });
+  return getTransaction(db, id);
+}
+
+/**
+ * Apply rule matches to still-`pending` rows only (so a re-run never overrides a
+ * manual categorization or an already-accepted one). Returns how many changed.
+ */
+export function applyRuleCategorizations(
+  db: Database.Database,
+  matches: RuleMatch[],
+): number {
+  const stmt = db.prepare(
+    `UPDATE transactions
+       SET status = 'categorized', category = @category, subcategory = @subcategory,
+           categorized_by = 'rule', rule_label = @label, categorized_at = @now
+     WHERE id = @id AND status = 'pending'`,
+  );
+  const now = new Date().toISOString();
+
+  let changed = 0;
+  const runAll = db.transaction((rows: RuleMatch[]) => {
+    for (const m of rows) {
+      changed += stmt.run({
+        id: m.transactionId,
+        category: m.category,
+        subcategory: m.subcategory,
+        label: m.label,
+        now,
+      }).changes;
+    }
+  });
+  runAll(matches);
+
+  return changed;
 }
 
 export function statusCounts(
