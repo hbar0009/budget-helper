@@ -1,14 +1,18 @@
 "use client";
 
+import FlagChips from "@/components/FlagChips";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import type { Flag } from "@/lib/db/flags";
 import { cn } from "@/lib/utils";
 import type { ReconciledTransaction } from "@/lib/transactions/types";
 
 export default function TransactionCard({
   transaction,
+  flags,
 }: {
   transaction: ReconciledTransaction;
+  flags?: Flag[];
 }) {
   const out = transaction.amount < 0;
   const [merchant, ...rest] = transaction.description.split(" - ");
@@ -40,6 +44,9 @@ export default function TransactionCard({
             {formatDate(transaction.date)}
           </span>
         </div>
+
+        <FlagChips flags={flags} />
+
 
         <div
           className={cn(

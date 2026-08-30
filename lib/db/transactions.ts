@@ -9,6 +9,12 @@
 import type Database from "better-sqlite3";
 import type { RuleMatch } from "../rules/apply.ts";
 import type { ReconciledTransaction } from "../transactions/types.ts";
+import {
+  type Flag,
+  deleteAllFlags,
+  flagsByTxn,
+  flagsForTxn,
+} from "./flags.ts";
 
 export type TxnStatus = "pending" | "categorized" | "skipped" | "excluded";
 
@@ -23,6 +29,8 @@ export interface StoredTransaction extends ReconciledTransaction {
   ruleLabel: string | null;
   importedAt: string;
   categorizedAt: string | null;
+  /** Follow-up annotations (wrong-account, notes). Empty when there are none. */
+  flags: Flag[];
 }
 
 interface Row {
@@ -46,7 +54,7 @@ interface Row {
   categorized_at: string | null;
 }
 
-function toStored(row: Row): StoredTransaction {
+function toStored(row: Row, flags: Flag[] = []): StoredTransaction {
   return {
     id: row.id,
     accountId: row.account_id,
@@ -66,6 +74,7 @@ function toStored(row: Row): StoredTransaction {
     ruleLabel: row.rule_label,
     importedAt: row.imported_at,
     categorizedAt: row.categorized_at,
+    flags,
   };
 }
 
@@ -126,7 +135,8 @@ export function listTransactions(
         )
         .all(opts.status)
     : db.prepare(`SELECT * FROM transactions ORDER BY date ASC, id`).all();
-  return (rows as Row[]).map(toStored);
+  const flags = flagsByTxn(db);
+  return (rows as Row[]).map((r) => toStored(r, flags[r.id] ?? []));
 }
 
 export function getTransaction(
@@ -136,7 +146,7 @@ export function getTransaction(
   const row = db
     .prepare(`SELECT * FROM transactions WHERE id = ?`)
     .get(id) as Row | undefined;
-  return row ? toStored(row) : undefined;
+  return row ? toStored(row, flagsForTxn(db, id)) : undefined;
 }
 
 /**
@@ -231,5 +241,6 @@ export function statusCounts(
 }
 
 export function deleteAllTransactions(db: Database.Database): void {
+  deleteAllFlags(db);
   db.prepare(`DELETE FROM transactions`).run();
 }

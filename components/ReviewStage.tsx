@@ -15,19 +15,25 @@ import {
   TableCell,
   TableRow,
 } from "@/components/ui/table";
+import FollowUpSection from "@/components/FollowUpSection";
 import { StatCard } from "@/components/StatCard";
+import type { StoredTransaction } from "@/lib/db/transactions";
 import { formatSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   budgetDeck,
   buildReviewSummary,
+  collectFollowUps,
   type CategorizationMap,
 } from "@/lib/transactions/summary";
-import type { ReconciledTransaction } from "@/lib/transactions/types";
+
+type Result = { ok: boolean; error?: string };
 
 interface Props {
-  transactions: ReconciledTransaction[];
+  transactions: StoredTransaction[];
   categorizations: CategorizationMap;
+  onUpdateFlag: (flagId: string, body: Record<string, unknown>) => Promise<Result>;
+  onDeleteFlag: (flagId: string) => Promise<Result>;
   onBack: () => void;
   onReset: () => void;
 }
@@ -35,12 +41,18 @@ interface Props {
 export default function ReviewStage({
   transactions,
   categorizations,
+  onUpdateFlag,
+  onDeleteFlag,
   onBack,
   onReset,
 }: Props) {
   const summary = useMemo(
     () => buildReviewSummary(transactions, categorizations),
     [transactions, categorizations],
+  );
+  const followUps = useMemo(
+    () => collectFollowUps(transactions),
+    [transactions],
   );
 
   function downloadCsv() {
@@ -198,6 +210,13 @@ export default function ReviewStage({
           </CardContent>
         </Card>
       )}
+
+      <FollowUpSection
+        followUps={followUps}
+        transactions={transactions}
+        onUpdateFlag={onUpdateFlag}
+        onDeleteFlag={onDeleteFlag}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Button variant="ghost" onClick={onBack}>

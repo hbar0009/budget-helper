@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import Database from "better-sqlite3";
 
+import { addFlag, listFlags } from "./flags.ts";
 import { migrate } from "./schema.ts";
 import {
   applyRuleCategorizations,
@@ -173,11 +174,29 @@ test("listTransactions filters by status", () => {
   assert.equal(listTransactions(db, { status: "categorized" }).length, 1);
 });
 
-test("deleteAllTransactions empties the table", () => {
+test("deleteAllTransactions empties the table and its flags", () => {
   const db = freshDb();
-  upsertTransactions(db, [txn({ amount: -1 })], "now");
+  const a = txn({ amount: -1 });
+  upsertTransactions(db, [a], "now");
+  addFlag(db, a.id, "note", { text: "later" });
+
   deleteAllTransactions(db);
   assert.equal(listTransactions(db).length, 0);
+  assert.equal(listFlags(db).length, 0);
+});
+
+test("stored rows carry their flags", () => {
+  const db = freshDb();
+  const a = txn({ amount: -1 });
+  upsertTransactions(db, [a, txn({ amount: -2 })], "now");
+  addFlag(db, a.id, "wrong_account", { shouldBeGroup: "personal" });
+
+  assert.equal(getTransaction(db, a.id)!.flags.length, 1);
+  assert.equal(getTransaction(db, a.id)!.flags[0].kind, "wrong_account");
+
+  const listed = listTransactions(db);
+  assert.equal(listed.find((t) => t.id === a.id)!.flags.length, 1);
+  assert.equal(listed.find((t) => t.id !== a.id)!.flags.length, 0);
 });
 
 test("round-trips every reconciled field", () => {

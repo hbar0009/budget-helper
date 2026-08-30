@@ -69,16 +69,44 @@ Review`, driven by `app/page.tsx`):
   already categorized are excluded — undo those from Auto-review to hand-edit
   them). Pick a
   category, then a subcategory, via a keyboard-first filter box: type to narrow,
-  `↑`/`↓` to move, `Enter` to pick. `⌥S` skips, `⌥←` / `⌥→` move between cards.
-  Picking a subcategory auto-advances. If your text matches nothing, a
+  `↑`/`↓` to move, `Enter` to pick. `⌥S` skips, `⌥F` flags, `⌥←` / `⌥→` move
+  between cards. Picking a subcategory auto-advances. If your text matches nothing, a
   **Create "…"** row appears — selecting it adds the category/subcategory (a new
   category is written only once you name its first subcategory) and `POST`s it to
   `config/categories.json` so it sticks for later sessions. New entries append to
   the end; renaming/deleting is done by editing the file.
 - **Review** — per-group (`personal` / `shared`) net totals broken down by
   category → subcategory, plus counts of skipped / pending / netted / cross-group
-  rows and a list of skipped transactions to follow up. `Download CSV` is a
-  stopgap until the `sink` exists.
+  rows, a list of skipped transactions, and a **Needs follow-up** section (see
+  Flags). `Download CSV` is a stopgap until the `sink` exists.
+
+## Flags & follow-up
+
+During Auto-review and Categorize, **⚑ Flag** (`⌥F` on a card) opens a dialog to
+tag a transaction for later. Flags live in their own `flag` table (schema v3),
+are keyed by the content-hash transaction id, and **survive re-imports**. v1
+kinds:
+
+- **wrong account** — paid from the wrong account. Record which account it should
+  have been, plus an optional note. Next batch, its correcting transfer shows up
+  as new rows; in the review's follow-up section you pick that transfer to
+  **link** it — the flag flips to *resolved* (`correctedByTxnId`), leaving a
+  permanent record. `reopen` undoes the link.
+- **note** — a free-text "needs action" reminder.
+
+Flags are **annotation-only** — they never change the review totals. The review
+screen's **Needs follow-up** card lists open/resolved wrong-account rows and all
+notes, each removable.
+
+- `POST /api/transactions/:id/flags` — `{ kind, data }`.
+- `PATCH /api/flags/:id` — `{ data }`, `{ status: "resolved", correctedByTxnId? }`,
+  or `{ status: "open" }`.
+- `DELETE /api/flags/:id`.
+
+Each response returns the affected transaction with its full flag list; the
+client splices it in. Logic is in `lib/db/flags.ts` (tested vs `:memory:`);
+`collectFollowUps` in `lib/transactions/summary.ts` builds the review buckets
+(pure, tested).
 
 ## Persistence
 
@@ -93,7 +121,7 @@ Categorize, otherwise → Review or Import).
   categorization you already made. Netted transfers are stored as `excluded`.
 - `PATCH /api/transactions/:id` — `{ category, subcategory }` or
   `{ status: "skipped" }` — one call per card, optimistic on the client.
-- `DELETE /api/transactions` — the "Clear all data" escape hatch.
+- `DELETE /api/transactions` — the "Clear all data" escape hatch (also drops all flags).
 
 `better-sqlite3` (synchronous); `serverExternalPackages` in `next.config.ts`
 keeps the native addon unbundled. The connection singleton is in `lib/db/`;
@@ -167,21 +195,26 @@ app/
   api/accounts/route.ts   GET the account list for the UI
   api/categories/route.ts GET the taxonomy / POST a new category or subcategory
   api/import/route.ts     POST files + accountIds -> parse, reconcile, upsert, auto-categorize
-  api/transactions/route.ts        GET stored rows (+?status=) / DELETE all
-  api/transactions/[id]/route.ts   PATCH one row (categorize / skip / undo)
+  api/transactions/route.ts             GET stored rows (+?status=) / DELETE all
+  api/transactions/[id]/route.ts        PATCH one row (categorize / skip / undo)
+  api/transactions/[id]/flags/route.ts  POST — add a flag to a transaction
+  api/flags/[id]/route.ts               PATCH (edit / resolve / reopen) / DELETE a flag
   api/rules/route.ts               POST — append a rule + apply it now
   api/rules/apply/route.ts         POST — re-run rules over pending rows
 components/
-  ui/                     shadcn primitives (button, card, dialog, select, command, ...)
+  ui/                     shadcn primitives (button, card, dialog, select, textarea, ...)
   AppHeader, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
-  TransactionCard, CategoryPicker, RuleDialog, ReviewStage, StatCard
+  TransactionCard, CategoryPicker, RuleDialog, FlagDialog, FlagChips,
+  ReviewStage, FollowUpSection, StatCard
 hooks/useCategories.ts    Fetch the taxonomy
+hooks/useAccounts.ts      Fetch the account list
 lib/utils.ts              cn() class-name helper
 lib/format.ts             Money formatting
 lib/db/
   index.ts                SQLite connection singleton (better-sqlite3)
   schema.ts               Schema + user_version migrations
   transactions.ts         Typed queries (upsert / list / setCategorization / applyRuleCategorizations / ...), tested vs :memory:
+  flags.ts                Flag CRUD + resolve/reopen (wrong-account, notes), tested vs :memory:
 lib/rules/
   config.ts               Load / validate / append / write config/rules.json (pure fns tested)
   apply.ts                applyRules(transactions, rules) -> RuleMatch[] (pure, tested)
@@ -219,5 +252,6 @@ Add a `BankProfile` to `lib/transactions/profiles.ts` and push it onto
 3. ~~Per-transaction review card: assign category / subcategory, plus review screen.~~ Done.
 4. ~~Persist transactions + categorizations locally (SQLite).~~ Done.
 5. ~~Auto-categorization from `config/rules.json` + an auto-review step.~~ Done.
-6. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.
-7. Reimbursement / split-expense tracking (design agreed; see notes).
+6. ~~Flags substrate + wrong-account / note flags + review follow-up section.~~ Done (Phase 1).
+7. Reimbursement / split-expense tracking — a per-person claims/repayments ledger built on the flags substrate (design agreed; see notes).
+8. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.

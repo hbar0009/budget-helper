@@ -5,6 +5,8 @@
  * Pure and unit-tested — no React, no storage.
  */
 
+import type { Flag, WrongAccountData } from "../db/flags.ts";
+import type { StoredTransaction } from "../db/transactions.ts";
 import { isBudgetRelevant } from "./reconcile.ts";
 import type { ReconciledTransaction } from "./types.ts";
 
@@ -25,9 +27,9 @@ export type CategorizationMap = Record<string, Categorization | null>;
  * The transactions that belong in the review deck: everything the budget cares
  * about, i.e. all but netted inter-account transfers.
  */
-export function budgetDeck(
-  transactions: ReconciledTransaction[],
-): ReconciledTransaction[] {
+export function budgetDeck<T extends ReconciledTransaction>(
+  transactions: T[],
+): T[] {
   return transactions.filter(isBudgetRelevant);
 }
 
@@ -141,6 +143,56 @@ export function buildReviewSummary(
     groups,
     skippedTransactions,
   };
+}
+
+export interface FlaggedTxn {
+  txn: StoredTransaction;
+  flag: Flag;
+}
+
+export interface FollowUps {
+  /** Wrong-account flags (open first, then resolved), oldest transaction first. */
+  wrongAccount: FlaggedTxn[];
+  /** Free-text note flags, oldest transaction first. */
+  notes: FlaggedTxn[];
+  /** Transaction id → the wrong-account flag(s) it was linked as the fix for. */
+  correctionFor: Record<string, { flag: Flag; original: StoredTransaction }[]>;
+}
+
+/**
+ * Pull the follow-up annotations out of a transaction set for the review screen.
+ * Pure — the totals are untouched (flags are annotation-only).
+ */
+export function collectFollowUps(
+  transactions: StoredTransaction[],
+): FollowUps {
+  const wrongAccount: FlaggedTxn[] = [];
+  const notes: FlaggedTxn[] = [];
+  const correctionFor: FollowUps["correctionFor"] = {};
+
+  for (const txn of transactions) {
+    for (const flag of txn.flags ?? []) {
+      if (flag.kind === "wrong_account") {
+        wrongAccount.push({ txn, flag });
+        const correctedBy = (flag.data as WrongAccountData).correctedByTxnId;
+        if (flag.status === "resolved" && correctedBy) {
+          (correctionFor[correctedBy] ??= []).push({ flag, original: txn });
+        }
+      } else if (flag.kind === "note") {
+        notes.push({ txn, flag });
+      }
+    }
+  }
+
+  const byDate = (a: FlaggedTxn, b: FlaggedTxn) =>
+    a.txn.date.localeCompare(b.txn.date) || a.txn.id.localeCompare(b.txn.id);
+  const openFirst = (a: FlaggedTxn, b: FlaggedTxn) =>
+    Number(a.flag.status === "resolved") - Number(b.flag.status === "resolved");
+
+  wrongAccount.sort((a, b) => openFirst(a, b) || byDate(a, b));
+  notes.sort(byDate);
+
+  return { wrongAccount, notes, correctionFor };
 }
 
 function mapGet<K, V>(map: Map<K, V>, key: K, create: () => V): V {

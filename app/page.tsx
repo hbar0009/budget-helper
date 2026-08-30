@@ -5,13 +5,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import AutoReviewStage from "@/components/AutoReviewStage";
 import CategorizeStage from "@/components/CategorizeStage";
+import FlagDialog from "@/components/FlagDialog";
 import ImportStage from "@/components/ImportStage";
 import ReviewStage from "@/components/ReviewStage";
 import type { RuleInput } from "@/components/RuleDialog";
 import Stepper, { type Stage } from "@/components/Stepper";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useAccounts } from "@/hooks/useAccounts";
+import type { FlagKind } from "@/lib/db/flags";
 import type { StoredTransaction } from "@/lib/db/transactions";
 import type { CategorizationMap } from "@/lib/transactions/summary";
+
+type FlagResult = { ok: boolean; error?: string };
 
 /**
  * The manual categorize deck: budget-relevant rows the user still handles by
@@ -29,6 +34,8 @@ export default function HomePage() {
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [flagTargetId, setFlagTargetId] = useState<string | null>(null);
+  const { accounts } = useAccounts();
 
   const load = useCallback(async (): Promise<StoredTransaction[] | null> => {
     try {
@@ -174,6 +181,53 @@ export default function HomePage() {
     [transactions, patch],
   );
 
+  const flagRequest = useCallback(
+    async (
+      url: string,
+      method: string,
+      body?: unknown,
+    ): Promise<FlagResult> => {
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: body ? { "content-type": "application/json" } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          return { ok: false, error: data.error ?? "That change didn't save." };
+        }
+        const updated = data.transaction as StoredTransaction | undefined;
+        if (updated) {
+          setTransactions((prev) =>
+            (prev ?? []).map((t) => (t.id === updated.id ? updated : t)),
+          );
+        } else {
+          await load();
+        }
+        return { ok: true };
+      } catch {
+        return { ok: false, error: "That change didn't save." };
+      }
+    },
+    [load],
+  );
+
+  const addFlag = useCallback(
+    (txnId: string, kind: FlagKind, data: unknown) =>
+      flagRequest(`/api/transactions/${txnId}/flags`, "POST", { kind, data }),
+    [flagRequest],
+  );
+  const updateFlag = useCallback(
+    (flagId: string, body: Record<string, unknown>) =>
+      flagRequest(`/api/flags/${flagId}`, "PATCH", body),
+    [flagRequest],
+  );
+  const deleteFlag = useCallback(
+    (flagId: string) => flagRequest(`/api/flags/${flagId}`, "DELETE"),
+    [flagRequest],
+  );
+
   async function handleImported() {
     const rows = await load();
     if (!rows) return;
@@ -242,10 +296,13 @@ export default function HomePage() {
     setTransactions([]);
     setIndex(0);
     setNotice(null);
+    setFlagTargetId(null);
     setStage("import");
   }
 
   const unlocked = (transactions?.length ?? 0) > 0;
+  const flagTarget =
+    (transactions ?? []).find((t) => t.id === flagTargetId) ?? null;
 
   return (
     <>
@@ -277,6 +334,7 @@ export default function HomePage() {
           <AutoReviewStage
             transactions={transactions}
             onUndo={undo}
+            onFlag={setFlagTargetId}
             onRerun={handleRerun}
             onContinue={() => {
               if (categorizeDeck.length === 0) {
@@ -295,14 +353,30 @@ export default function HomePage() {
             onIndexChange={setIndex}
             onCategorize={categorize}
             onCreateRule={handleCreateRule}
+            onFlag={setFlagTargetId}
             onComplete={() => setStage("review")}
           />
         ) : (
           <ReviewStage
             transactions={transactions}
             categorizations={categorizations}
+            onUpdateFlag={updateFlag}
+            onDeleteFlag={deleteFlag}
             onBack={() => setStage("categorize")}
             onReset={handleReset}
+          />
+        )}
+
+        {flagTarget && (
+          <FlagDialog
+            open
+            onOpenChange={(o) => {
+              if (!o) setFlagTargetId(null);
+            }}
+            transaction={flagTarget}
+            accounts={accounts}
+            onAdd={(kind, data) => addFlag(flagTarget.id, kind, data)}
+            onDelete={deleteFlag}
           />
         )}
       </main>

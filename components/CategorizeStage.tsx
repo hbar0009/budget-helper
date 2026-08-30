@@ -10,11 +10,11 @@ import CategoryPicker from "@/components/CategoryPicker";
 import RuleDialog, { type RuleInput } from "@/components/RuleDialog";
 import TransactionCard from "@/components/TransactionCard";
 import { useCategories } from "@/hooks/useCategories";
+import type { StoredTransaction } from "@/lib/db/transactions";
 import { budgetDeck, type CategorizationMap } from "@/lib/transactions/summary";
-import type { ReconciledTransaction } from "@/lib/transactions/types";
 
 interface Props {
-  transactions: ReconciledTransaction[];
+  transactions: StoredTransaction[];
   categorizations: CategorizationMap;
   index: number;
   onIndexChange: (index: number) => void;
@@ -24,6 +24,8 @@ interface Props {
   ) => void;
   /** Persist a new auto-categorization rule spun off from the current card. */
   onCreateRule: (rule: RuleInput) => Promise<{ ok: boolean; error?: string }>;
+  /** Open the flag dialog for a transaction. */
+  onFlag: (txnId: string) => void;
   onComplete: () => void;
 }
 
@@ -34,6 +36,7 @@ export default function CategorizeStage({
   onIndexChange,
   onCategorize,
   onCreateRule,
+  onFlag,
   onComplete,
 }: Props) {
   const { categories, error, addCategory } = useCategories();
@@ -45,7 +48,7 @@ export default function CategorizeStage({
   const [saving, setSaving] = useState(false);
   const [ruleOpen, setRuleOpen] = useState(false);
 
-  const current: ReconciledTransaction | undefined = deck[index];
+  const current: StoredTransaction | undefined = deck[index];
   const existing = current ? categorizations[current.id] : undefined;
 
   // Landing on a card: seed the picker from any categorization it already has.
@@ -132,6 +135,9 @@ export default function CategorizeStage({
       if (e.key === "s" || e.key === "S") {
         e.preventDefault();
         skip();
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        if (current) onFlag(current.id);
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         goto(index - 1);
@@ -142,7 +148,7 @@ export default function CategorizeStage({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [skip, goto, index]);
+  }, [skip, goto, index, current, onFlag]);
 
   if (error) {
     return (
@@ -214,7 +220,7 @@ export default function CategorizeStage({
         </div>
       </div>
 
-      <TransactionCard transaction={current!} />
+      <TransactionCard transaction={current!} flags={current!.flags} />
 
       {step === "category" ? (
         <CategoryPicker
@@ -270,10 +276,13 @@ export default function CategorizeStage({
           <Button variant="ghost" onClick={() => setRuleOpen(true)}>
             ＋ Rule
           </Button>
+          <Button variant="ghost" onClick={() => onFlag(current!.id)}>
+            ⚑ Flag
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
-            ⌥S skip · ⌥← ⌥→ move
+            ⌥S skip · ⌥F flag · ⌥← ⌥→ move
           </span>
           <Button variant="ghost" onClick={skip}>
             Skip

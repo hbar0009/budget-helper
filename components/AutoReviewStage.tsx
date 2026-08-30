@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { RotateCwIcon, Undo2Icon } from "lucide-react";
+import { FlagIcon, RotateCwIcon, Undo2Icon } from "lucide-react";
 
+import FlagChips from "@/components/FlagChips";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,11 +13,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatSigned } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { StoredTransaction } from "@/lib/db/transactions";
 
 interface Props {
   transactions: StoredTransaction[];
   onUndo: (id: string) => void;
+  onFlag: (txnId: string) => void;
   onRerun: () => Promise<void> | void;
   onContinue: () => void;
 }
@@ -31,6 +34,7 @@ interface Group {
 export default function AutoReviewStage({
   transactions,
   onUndo,
+  onFlag,
   onRerun,
   onContinue,
 }: Props) {
@@ -113,7 +117,20 @@ export default function AutoReviewStage({
                 <span className="text-muted-foreground w-24 shrink-0 tabular-nums">
                   {t.date}
                 </span>
-                <span className="min-w-0 flex-1 truncate">{t.description}</span>
+                <span
+                  className={cn(
+                    "w-16 shrink-0 text-xs capitalize",
+                    t.group === "shared"
+                      ? "text-info"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {t.group}
+                </span>
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className="truncate">{t.description}</span>
+                  <FlagChips flags={t.flags} />
+                </span>
                 <span
                   className={
                     "shrink-0 tabular-nums " +
@@ -122,6 +139,15 @@ export default function AutoReviewStage({
                 >
                   {formatSigned(t.amount)}
                 </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0"
+                  aria-label="Flag"
+                  onClick={() => onFlag(t.id)}
+                >
+                  <FlagIcon />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

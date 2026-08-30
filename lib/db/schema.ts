@@ -7,7 +7,7 @@
 
 import type Database from "better-sqlite3";
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const V1 = `
 CREATE TABLE IF NOT EXISTS transactions (
@@ -39,11 +39,29 @@ ALTER TABLE transactions ADD COLUMN categorized_by TEXT;
 ALTER TABLE transactions ADD COLUMN rule_label TEXT;
 `;
 
+// v3: free-form flags on transactions (wrong-account, notes) for end-of-batch
+// follow-up. `data` is a kind-specific JSON blob.
+const V3 = `
+CREATE TABLE IF NOT EXISTS flag (
+  id          TEXT PRIMARY KEY,
+  txn_id      TEXT NOT NULL REFERENCES transactions (id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,
+  data        TEXT NOT NULL DEFAULT '{}',
+  status      TEXT NOT NULL DEFAULT 'open',
+  created_at  TEXT NOT NULL,
+  resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_flag_txn ON flag (txn_id);
+CREATE INDEX IF NOT EXISTS idx_flag_status ON flag (status);
+`;
+
 export function migrate(db: Database.Database): void {
   const version = db.pragma("user_version", { simple: true }) as number;
 
   if (version < 1) db.exec(V1);
   if (version < 2) db.exec(V2);
+  if (version < 3) db.exec(V3);
 
   db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
