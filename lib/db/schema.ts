@@ -7,7 +7,7 @@
 
 import type Database from "better-sqlite3";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const V1 = `
 CREATE TABLE IF NOT EXISTS transactions (
@@ -56,12 +56,33 @@ CREATE INDEX IF NOT EXISTS idx_flag_txn ON flag (txn_id);
 CREATE INDEX IF NOT EXISTS idx_flag_status ON flag (status);
 `;
 
+// v4: reimbursement claims — "person P owes me `expected` for transaction T".
+// One fronted debit spawns one claim per person. Repayment tracking (linking the
+// incoming credit) is a later migration.
+const V4 = `
+CREATE TABLE IF NOT EXISTS reimbursement_claim (
+  id             TEXT PRIMARY KEY,
+  txn_id         TEXT NOT NULL REFERENCES transactions (id) ON DELETE CASCADE,
+  person         TEXT NOT NULL,
+  expected       REAL,
+  status         TEXT NOT NULL DEFAULT 'open',
+  note           TEXT,
+  followed_up_at TEXT,
+  created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_claim_txn ON reimbursement_claim (txn_id);
+CREATE INDEX IF NOT EXISTS idx_claim_status ON reimbursement_claim (status);
+CREATE INDEX IF NOT EXISTS idx_claim_person ON reimbursement_claim (person);
+`;
+
 export function migrate(db: Database.Database): void {
   const version = db.pragma("user_version", { simple: true }) as number;
 
   if (version < 1) db.exec(V1);
   if (version < 2) db.exec(V2);
   if (version < 3) db.exec(V3);
+  if (version < 4) db.exec(V4);
 
   db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }

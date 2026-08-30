@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import FollowUpSection from "@/components/FollowUpSection";
+import ReimbursementSection from "@/components/ReimbursementSection";
 import { StatCard } from "@/components/StatCard";
 import type { StoredTransaction } from "@/lib/db/transactions";
 import { formatSigned } from "@/lib/format";
@@ -24,6 +25,7 @@ import {
   budgetDeck,
   buildReviewSummary,
   collectFollowUps,
+  collectReimbursements,
   type CategorizationMap,
 } from "@/lib/transactions/summary";
 
@@ -34,6 +36,11 @@ interface Props {
   categorizations: CategorizationMap;
   onUpdateFlag: (flagId: string, body: Record<string, unknown>) => Promise<Result>;
   onDeleteFlag: (flagId: string) => Promise<Result>;
+  onUpdateClaim: (
+    claimId: string,
+    body: Record<string, unknown>,
+  ) => Promise<Result>;
+  onDeleteClaim: (claimId: string) => Promise<Result>;
   onBack: () => void;
   onReset: () => void;
 }
@@ -43,6 +50,8 @@ export default function ReviewStage({
   categorizations,
   onUpdateFlag,
   onDeleteFlag,
+  onUpdateClaim,
+  onDeleteClaim,
   onBack,
   onReset,
 }: Props) {
@@ -52,6 +61,10 @@ export default function ReviewStage({
   );
   const followUps = useMemo(
     () => collectFollowUps(transactions),
+    [transactions],
+  );
+  const reimbursements = useMemo(
+    () => collectReimbursements(transactions),
     [transactions],
   );
 
@@ -216,6 +229,12 @@ export default function ReviewStage({
         transactions={transactions}
         onUpdateFlag={onUpdateFlag}
         onDeleteFlag={onDeleteFlag}
+      />
+
+      <ReimbursementSection
+        reimbursements={reimbursements}
+        onUpdateClaim={onUpdateClaim}
+        onDeleteClaim={onDeleteClaim}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">

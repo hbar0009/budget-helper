@@ -6,6 +6,7 @@
  */
 
 import type { Flag, WrongAccountData } from "../db/flags.ts";
+import type { Claim } from "../db/reimbursements.ts";
 import type { StoredTransaction } from "../db/transactions.ts";
 import { isBudgetRelevant } from "./reconcile.ts";
 import type { ReconciledTransaction } from "./types.ts";
@@ -193,6 +194,71 @@ export function collectFollowUps(
   notes.sort(byDate);
 
   return { wrongAccount, notes, correctionFor };
+}
+
+export interface ClaimRow {
+  claim: Claim;
+  txn: StoredTransaction;
+}
+
+export interface PersonOwed {
+  person: string;
+  /** Sum of `expected` across this person's still-open claims. */
+  openTotal: number;
+  /** True if any open claim has no `expected` set yet. */
+  hasUnknown: boolean;
+  claims: ClaimRow[];
+}
+
+export interface Reimbursements {
+  anyClaims: boolean;
+  /** Grouped by person, most owed first. */
+  people: PersonOwed[];
+}
+
+/**
+ * Roll every transaction's reimbursement claims up by person for the review
+ * screen. Pure — claims are annotation-only, so the budget totals are untouched.
+ */
+export function collectReimbursements(
+  transactions: StoredTransaction[],
+): Reimbursements {
+  const byPerson = new Map<string, PersonOwed>();
+
+  for (const txn of transactions) {
+    for (const claim of txn.claims ?? []) {
+      const key = claim.person.toLowerCase();
+      let entry = byPerson.get(key);
+      if (!entry) {
+        entry = {
+          person: claim.person,
+          openTotal: 0,
+          hasUnknown: false,
+          claims: [],
+        };
+        byPerson.set(key, entry);
+      }
+      entry.claims.push({ claim, txn });
+      if (claim.status === "open") {
+        if (claim.expected === null) entry.hasUnknown = true;
+        else entry.openTotal = round2(entry.openTotal + claim.expected);
+      }
+    }
+  }
+
+  const people = [...byPerson.values()];
+  for (const entry of people) {
+    entry.claims.sort(
+      (a, b) =>
+        Number(a.claim.status !== "open") - Number(b.claim.status !== "open") ||
+        a.txn.date.localeCompare(b.txn.date),
+    );
+  }
+  people.sort(
+    (a, b) => b.openTotal - a.openTotal || a.person.localeCompare(b.person),
+  );
+
+  return { anyClaims: people.length > 0, people };
 }
 
 function mapGet<K, V>(map: Map<K, V>, key: K, create: () => V): V {

@@ -69,8 +69,9 @@ Review`, driven by `app/page.tsx`):
   already categorized are excluded — undo those from Auto-review to hand-edit
   them). Pick a
   category, then a subcategory, via a keyboard-first filter box: type to narrow,
-  `↑`/`↓` to move, `Enter` to pick. `⌥S` skips, `⌥F` flags, `⌥←` / `⌥→` move
-  between cards. Picking a subcategory auto-advances. If your text matches nothing, a
+  `↑`/`↓` to move, `Enter` to pick. `⌥S` skips, `⌥F` flags, `⌥P` splits,
+  `⌥←` / `⌥→` move between cards. Picking a subcategory auto-advances. If your
+  text matches nothing, a
   **Create "…"** row appears — selecting it adds the category/subcategory (a new
   category is written only once you name its first subcategory) and `POST`s it to
   `config/categories.json` so it sticks for later sessions. New entries append to
@@ -110,6 +111,34 @@ Each response returns the affected transaction with its full flag list; the
 client splices it in. Logic is in `lib/db/flags.ts` (tested vs `:memory:`);
 `collectFollowUps` in `lib/transactions/summary.ts` builds the review buckets
 (pure, tested).
+
+## Reimbursements — who owes you
+
+When you front an expense for other people, **➗ Split** (`⌥P` on a card) opens a
+dialog: add a row per person with the amount they owe, or use the **even split**
+helper (`total ÷ N people incl. you`). Each row becomes a `reimbursement_claim`
+row (schema v4) — `person`, `expected` (nullable = "TBD"), `status`
+(`open` / `settled` / `written_off`), `followed_up_at`. Claims are keyed by the
+content-hash transaction id and **survive re-imports**, so a repayment that lands
+months later still finds its claim.
+
+The fronted debit is still categorized as the normal expense it is (claims are
+**annotation-only** — the budget totals stay gross). The review screen's **Owed
+to you** card groups open claims by person with a total to chase; per claim you
+can toggle *followed up*, *mark settled*, or *write off* (and *reopen*).
+
+*Part A* (built) covers tracking + manual settle. *Part B* (planned) adds linking
+the actual incoming repayment credit, partial-repaid tracking, and a nudge for
+income-categorized credits that look like unlinked repayments.
+
+- `POST /api/transactions/:id/claims` — `{ claims: [{ person, expected?, note? }] }`.
+- `PATCH /api/claims/:id` — `{ person?, expected?, note? }`, `{ status }`,
+  `{ followedUp: boolean }`.
+- `DELETE /api/claims/:id`.
+
+Logic in `lib/db/reimbursements.ts` (tested vs `:memory:`); `collectReimbursements`
+in `lib/transactions/summary.ts` rolls claims up by person for the review (pure,
+tested).
 
 ## Persistence
 
@@ -203,15 +232,18 @@ app/
   api/import/route.ts     POST files + accountIds -> parse, reconcile, upsert, auto-categorize
   api/transactions/route.ts             GET stored rows (+?status=) / DELETE all
   api/transactions/[id]/route.ts        PATCH one row (categorize / skip / undo)
-  api/transactions/[id]/flags/route.ts  POST — add a flag to a transaction
-  api/flags/[id]/route.ts               PATCH (edit / resolve / reopen) / DELETE a flag
+  api/transactions/[id]/flags/route.ts   POST — add a flag to a transaction
+  api/transactions/[id]/claims/route.ts  POST — add reimbursement claims (a split)
+  api/flags/[id]/route.ts                PATCH (edit / resolve / reopen) / DELETE a flag
+  api/claims/[id]/route.ts               PATCH (edit / settle / write off / followed-up) / DELETE
   api/rules/route.ts               POST — append a rule + apply it now
   api/rules/apply/route.ts         POST — re-run rules over pending rows
 components/
   ui/                     shadcn primitives (button, card, dialog, select, textarea, ...)
   AppHeader, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
   TransactionCard, CategoryPicker, RuleDialog, FlagDialog, FlagChips,
-  ReviewStage, FollowUpSection, StatCard
+  SplitDialog, ReimbursementChip, ReviewStage, FollowUpSection,
+  ReimbursementSection, StatCard
 hooks/useCategories.ts    Fetch the taxonomy
 hooks/useAccounts.ts      Fetch the account list
 lib/utils.ts              cn() class-name helper
@@ -221,6 +253,7 @@ lib/db/
   schema.ts               Schema + user_version migrations
   transactions.ts         Typed queries (upsert / list / setCategorization / applyRuleCategorizations / ...), tested vs :memory:
   flags.ts                Flag CRUD + resolve/reopen (wrong-account, notes), tested vs :memory:
+  reimbursements.ts       Reimbursement-claim CRUD (per-person "owes you"), tested vs :memory:
 lib/rules/
   config.ts               Load / validate / append / write config/rules.json (pure fns tested)
   apply.ts                applyRules(transactions, rules) -> RuleMatch[] (pure, tested)
@@ -259,5 +292,5 @@ Add a `BankProfile` to `lib/transactions/profiles.ts` and push it onto
 4. ~~Persist transactions + categorizations locally (SQLite).~~ Done.
 5. ~~Auto-categorization from `config/rules.json` + an auto-review step.~~ Done.
 6. ~~Flags substrate + wrong-account / note flags + review follow-up section.~~ Done (Phase 1).
-7. Reimbursement / split-expense tracking — a per-person claims/repayments ledger built on the flags substrate (design agreed; see notes).
+7. Reimbursement / split-expense tracking — per-person claims on a fronted debit + an "Owed to you" review section. Part A (track + settle by hand) done; Part B (link the incoming repayment credit + partial-repaid tracking + income nudge) planned.
 8. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.

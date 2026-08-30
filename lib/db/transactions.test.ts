@@ -3,6 +3,7 @@ import { test } from "node:test";
 import Database from "better-sqlite3";
 
 import { addFlag, listFlags } from "./flags.ts";
+import { addClaims, listClaims } from "./reimbursements.ts";
 import { migrate } from "./schema.ts";
 import {
   applyRuleCategorizations,
@@ -174,29 +175,35 @@ test("listTransactions filters by status", () => {
   assert.equal(listTransactions(db, { status: "categorized" }).length, 1);
 });
 
-test("deleteAllTransactions empties the table and its flags", () => {
+test("deleteAllTransactions empties the table, its flags, and its claims", () => {
   const db = freshDb();
   const a = txn({ amount: -1 });
   upsertTransactions(db, [a], "now");
   addFlag(db, a.id, "note", { text: "later" });
+  addClaims(db, a.id, [{ person: "Alice" }]);
 
   deleteAllTransactions(db);
   assert.equal(listTransactions(db).length, 0);
   assert.equal(listFlags(db).length, 0);
+  assert.equal(listClaims(db).length, 0);
 });
 
-test("stored rows carry their flags", () => {
+test("stored rows carry their flags and claims", () => {
   const db = freshDb();
   const a = txn({ amount: -1 });
   upsertTransactions(db, [a, txn({ amount: -2 })], "now");
   addFlag(db, a.id, "wrong_account", { shouldBeGroup: "personal" });
+  addClaims(db, a.id, [
+    { person: "Alice", expected: 25 },
+    { person: "Bob", expected: 25 },
+  ]);
 
   assert.equal(getTransaction(db, a.id)!.flags.length, 1);
-  assert.equal(getTransaction(db, a.id)!.flags[0].kind, "wrong_account");
+  assert.equal(getTransaction(db, a.id)!.claims.length, 2);
 
   const listed = listTransactions(db);
-  assert.equal(listed.find((t) => t.id === a.id)!.flags.length, 1);
-  assert.equal(listed.find((t) => t.id !== a.id)!.flags.length, 0);
+  assert.equal(listed.find((t) => t.id === a.id)!.claims.length, 2);
+  assert.equal(listed.find((t) => t.id !== a.id)!.claims.length, 0);
 });
 
 test("round-trips every reconciled field", () => {

@@ -1,9 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FlagIcon, RotateCwIcon, Undo2Icon } from "lucide-react";
+import {
+  FlagIcon,
+  RotateCwIcon,
+  Undo2Icon,
+  UsersIcon,
+} from "lucide-react";
 
 import FlagChips from "@/components/FlagChips";
+import ReimbursementChip from "@/components/ReimbursementChip";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,6 +26,7 @@ interface Props {
   transactions: StoredTransaction[];
   onUndo: (id: string) => void;
   onFlag: (txnId: string) => void;
+  onSplit: (txnId: string) => void;
   onRerun: () => Promise<void> | void;
   onContinue: () => void;
 }
@@ -35,6 +42,7 @@ export default function AutoReviewStage({
   transactions,
   onUndo,
   onFlag,
+  onSplit,
   onRerun,
   onContinue,
 }: Props) {
@@ -130,6 +138,7 @@ export default function AutoReviewStage({
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   <span className="truncate">{t.description}</span>
                   <FlagChips flags={t.flags} />
+                  <ReimbursementChip claims={t.claims} />
                 </span>
                 <span
                   className={
@@ -147,6 +156,15 @@ export default function AutoReviewStage({
                   onClick={() => onFlag(t.id)}
                 >
                   <FlagIcon />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0"
+                  aria-label="Split / reimbursement"
+                  onClick={() => onSplit(t.id)}
+                >
+                  <UsersIcon />
                 </Button>
                 <Button
                   variant="ghost"

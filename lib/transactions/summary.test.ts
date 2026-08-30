@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Flag } from "../db/flags.ts";
+import type { Claim, ClaimStatus } from "../db/reimbursements.ts";
 import type { StoredTransaction } from "../db/transactions.ts";
-import { budgetDeck, buildReviewSummary, collectFollowUps } from "./summary.ts";
+import {
+  budgetDeck,
+  buildReviewSummary,
+  collectFollowUps,
+  collectReimbursements,
+} from "./summary.ts";
 import type { CategorizationMap } from "./summary.ts";
 import type { ReconciledTransaction, TransferState } from "./types.ts";
 
@@ -134,8 +140,28 @@ function stored(
     importedAt: "2026-08-01T00:00:00.000Z",
     categorizedAt: null,
     flags: [],
+    claims: [],
     ...partial,
   } as StoredTransaction;
+}
+
+let claimSeq = 0;
+function claim(
+  person: string,
+  expected: number | null,
+  status: ClaimStatus = "open",
+): Claim {
+  claimSeq += 1;
+  return {
+    id: `c${claimSeq}`,
+    txnId: "t?",
+    person,
+    expected,
+    status,
+    note: null,
+    followedUpAt: null,
+    createdAt: "2026-08-10T00:00:00.000Z",
+  };
 }
 
 test("collectFollowUps buckets wrong-account and note flags, open first", () => {
@@ -180,4 +206,46 @@ test("collectFollowUps returns empty buckets when nothing is flagged", () => {
   assert.deepEqual(result.wrongAccount, []);
   assert.deepEqual(result.notes, []);
   assert.deepEqual(result.correctionFor, {});
+});
+
+// --- collectReimbursements ------------------------------------------------------
+
+test("collectReimbursements rolls claims up by person, most owed first", () => {
+  const golf = stored({
+    amount: -100,
+    date: "2026-08-05",
+    claims: [claim("Alice", 25), claim("Bob", 25), claim("Carol", 25)],
+  });
+  const dinner = stored({
+    amount: -60,
+    date: "2026-08-12",
+    claims: [claim("Bob", 20), claim("Alice", 10, "settled")],
+  });
+
+  const { anyClaims, people } = collectReimbursements([golf, dinner]);
+
+  assert.equal(anyClaims, true);
+  // Bob owes 25 + 20 = 45; Alice owes 25 (the settled 10 doesn't count); Carol 25
+  assert.deepEqual(
+    people.map((p) => [p.person, p.openTotal]),
+    [
+      ["Bob", 45],
+      ["Alice", 25],
+      ["Carol", 25],
+    ],
+  );
+  const alice = people.find((p) => p.person === "Alice")!;
+  assert.equal(alice.claims.length, 2); // both the open and the settled one
+});
+
+test("collectReimbursements flags an unknown amount and returns empty when there are no claims", () => {
+  const withTbd = stored({ amount: -30, claims: [claim("Dave", null)] });
+  const { people } = collectReimbursements([withTbd]);
+  assert.equal(people[0].hasUnknown, true);
+  assert.equal(people[0].openTotal, 0);
+
+  assert.deepEqual(collectReimbursements([stored({ amount: -5 })]), {
+    anyClaims: false,
+    people: [],
+  });
 });

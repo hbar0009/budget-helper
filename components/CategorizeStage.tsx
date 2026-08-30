@@ -26,6 +26,8 @@ interface Props {
   onCreateRule: (rule: RuleInput) => Promise<{ ok: boolean; error?: string }>;
   /** Open the flag dialog for a transaction. */
   onFlag: (txnId: string) => void;
+  /** Open the split / reimbursement dialog for a transaction. */
+  onSplit: (txnId: string) => void;
   onComplete: () => void;
 }
 
@@ -37,6 +39,7 @@ export default function CategorizeStage({
   onCategorize,
   onCreateRule,
   onFlag,
+  onSplit,
   onComplete,
 }: Props) {
   const { categories, error, addCategory } = useCategories();
@@ -138,6 +141,9 @@ export default function CategorizeStage({
       } else if (e.key === "f" || e.key === "F") {
         e.preventDefault();
         if (current) onFlag(current.id);
+      } else if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        if (current) onSplit(current.id);
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         goto(index - 1);
@@ -148,7 +154,7 @@ export default function CategorizeStage({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [skip, goto, index, current, onFlag]);
+  }, [skip, goto, index, current, onFlag, onSplit]);
 
   if (error) {
     return (
@@ -220,7 +226,11 @@ export default function CategorizeStage({
         </div>
       </div>
 
-      <TransactionCard transaction={current!} flags={current!.flags} />
+      <TransactionCard
+        transaction={current!}
+        flags={current!.flags}
+        claims={current!.claims}
+      />
 
       {step === "category" ? (
         <CategoryPicker
@@ -279,10 +289,13 @@ export default function CategorizeStage({
           <Button variant="ghost" onClick={() => onFlag(current!.id)}>
             ⚑ Flag
           </Button>
+          <Button variant="ghost" onClick={() => onSplit(current!.id)}>
+            ➗ Split
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
-            ⌥S skip · ⌥F flag · ⌥← ⌥→ move
+            ⌥S skip · ⌥F flag · ⌥P split · ⌥← ⌥→ move
           </span>
           <Button variant="ghost" onClick={skip}>
             Skip

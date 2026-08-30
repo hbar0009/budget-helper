@@ -9,6 +9,7 @@ import FlagDialog from "@/components/FlagDialog";
 import ImportStage from "@/components/ImportStage";
 import ReviewStage from "@/components/ReviewStage";
 import type { RuleInput } from "@/components/RuleDialog";
+import SplitDialog from "@/components/SplitDialog";
 import Stepper, { type Stage } from "@/components/Stepper";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -16,7 +17,7 @@ import type { FlagKind } from "@/lib/db/flags";
 import type { StoredTransaction } from "@/lib/db/transactions";
 import type { CategorizationMap } from "@/lib/transactions/summary";
 
-type FlagResult = { ok: boolean; error?: string };
+type MutationResult = { ok: boolean; error?: string };
 
 /**
  * The manual categorize deck: budget-relevant rows the user still handles by
@@ -35,6 +36,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [flagTargetId, setFlagTargetId] = useState<string | null>(null);
+  const [splitTargetId, setSplitTargetId] = useState<string | null>(null);
   const { accounts } = useAccounts();
 
   const load = useCallback(async (): Promise<StoredTransaction[] | null> => {
@@ -181,12 +183,12 @@ export default function HomePage() {
     [transactions, patch],
   );
 
-  const flagRequest = useCallback(
+  const annotationRequest = useCallback(
     async (
       url: string,
       method: string,
       body?: unknown,
-    ): Promise<FlagResult> => {
+    ): Promise<MutationResult> => {
       try {
         const res = await fetch(url, {
           method,
@@ -215,17 +217,35 @@ export default function HomePage() {
 
   const addFlag = useCallback(
     (txnId: string, kind: FlagKind, data: unknown) =>
-      flagRequest(`/api/transactions/${txnId}/flags`, "POST", { kind, data }),
-    [flagRequest],
+      annotationRequest(`/api/transactions/${txnId}/flags`, "POST", { kind, data }),
+    [annotationRequest],
   );
   const updateFlag = useCallback(
     (flagId: string, body: Record<string, unknown>) =>
-      flagRequest(`/api/flags/${flagId}`, "PATCH", body),
-    [flagRequest],
+      annotationRequest(`/api/flags/${flagId}`, "PATCH", body),
+    [annotationRequest],
   );
   const deleteFlag = useCallback(
-    (flagId: string) => flagRequest(`/api/flags/${flagId}`, "DELETE"),
-    [flagRequest],
+    (flagId: string) => annotationRequest(`/api/flags/${flagId}`, "DELETE"),
+    [annotationRequest],
+  );
+
+  const addClaims = useCallback(
+    (
+      txnId: string,
+      claims: { person: string; expected: number | null; note: string | null }[],
+    ) =>
+      annotationRequest(`/api/transactions/${txnId}/claims`, "POST", { claims }),
+    [annotationRequest],
+  );
+  const updateClaim = useCallback(
+    (claimId: string, body: Record<string, unknown>) =>
+      annotationRequest(`/api/claims/${claimId}`, "PATCH", body),
+    [annotationRequest],
+  );
+  const deleteClaim = useCallback(
+    (claimId: string) => annotationRequest(`/api/claims/${claimId}`, "DELETE"),
+    [annotationRequest],
   );
 
   async function handleImported() {
@@ -297,12 +317,15 @@ export default function HomePage() {
     setIndex(0);
     setNotice(null);
     setFlagTargetId(null);
+    setSplitTargetId(null);
     setStage("import");
   }
 
   const unlocked = (transactions?.length ?? 0) > 0;
   const flagTarget =
     (transactions ?? []).find((t) => t.id === flagTargetId) ?? null;
+  const splitTarget =
+    (transactions ?? []).find((t) => t.id === splitTargetId) ?? null;
 
   return (
     <>
@@ -335,6 +358,7 @@ export default function HomePage() {
             transactions={transactions}
             onUndo={undo}
             onFlag={setFlagTargetId}
+            onSplit={setSplitTargetId}
             onRerun={handleRerun}
             onContinue={() => {
               if (categorizeDeck.length === 0) {
@@ -354,6 +378,7 @@ export default function HomePage() {
             onCategorize={categorize}
             onCreateRule={handleCreateRule}
             onFlag={setFlagTargetId}
+            onSplit={setSplitTargetId}
             onComplete={() => setStage("review")}
           />
         ) : (
@@ -362,6 +387,8 @@ export default function HomePage() {
             categorizations={categorizations}
             onUpdateFlag={updateFlag}
             onDeleteFlag={deleteFlag}
+            onUpdateClaim={updateClaim}
+            onDeleteClaim={deleteClaim}
             onBack={() => setStage("categorize")}
             onReset={handleReset}
           />
@@ -377,6 +404,19 @@ export default function HomePage() {
             accounts={accounts}
             onAdd={(kind, data) => addFlag(flagTarget.id, kind, data)}
             onDelete={deleteFlag}
+          />
+        )}
+
+        {splitTarget && (
+          <SplitDialog
+            open
+            onOpenChange={(o) => {
+              if (!o) setSplitTargetId(null);
+            }}
+            transaction={splitTarget}
+            onAdd={(claims) => addClaims(splitTarget.id, claims)}
+            onUpdate={updateClaim}
+            onDelete={deleteClaim}
           />
         )}
       </main>
