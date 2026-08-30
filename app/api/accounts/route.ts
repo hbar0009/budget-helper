@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { AccountsConfigError, loadAccountsConfig } from "@/lib/accounts/config";
+import {
+  AccountsConfigError,
+  isSpendingAccount,
+  loadAccountsConfig,
+} from "@/lib/accounts/config";
 
 export const runtime = "nodejs";
 
@@ -13,11 +17,12 @@ export async function GET(): Promise<Response> {
   try {
     const config = await loadAccountsConfig();
     return NextResponse.json({
-      accounts: config.accounts.map(({ id, label, type, group }) => ({
-        id,
-        label,
-        type,
-        group,
+      accounts: config.accounts.map((account) => ({
+        id: account.id,
+        label: account.label,
+        type: account.type,
+        group: account.group,
+        spending: isSpendingAccount(account),
       })),
     });
   } catch (err) {

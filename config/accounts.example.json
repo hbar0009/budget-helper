@@ -1,9 +1,9 @@
 {
   "accounts": [
-    { "id": "personal-everyday", "label": "Personal Everyday", "number": "0000000001", "type": "everyday", "group": "personal" },
-    { "id": "personal-savings", "label": "Personal Savings", "number": "0000000002", "type": "savings", "group": "personal" },
-    { "id": "shared-everyday", "label": "Shared Everyday", "number": "0000000003", "type": "everyday", "group": "shared" },
-    { "id": "shared-savings", "label": "Shared Savings", "number": "0000000004", "type": "savings", "group": "shared" }
+    { "id": "personal-everyday", "label": "Personal Everyday", "number": "0000000001", "type": "everyday", "group": "personal", "spending": true },
+    { "id": "personal-savings", "label": "Personal Savings", "number": "0000000002", "type": "savings", "group": "personal", "spending": false },
+    { "id": "shared-everyday", "label": "Shared Everyday", "number": "0000000003", "type": "everyday", "group": "shared", "spending": true },
+    { "id": "shared-savings", "label": "Shared Savings", "number": "0000000004", "type": "savings", "group": "shared", "spending": false }
   ],
   "groups": {
     "personal": {

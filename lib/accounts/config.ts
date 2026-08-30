@@ -21,6 +21,16 @@ export interface Account {
   type: AccountType;
   /** Group key — must exist in `groups`. Drives which spreadsheet the data goes to. */
   group: string;
+  /**
+   * Is money paid out of this account? Drives the "wrong account" flag's
+   * candidate list. Optional — defaults to `type === "everyday"`.
+   */
+  spending?: boolean;
+}
+
+/** Does money get spent from this account? See `Account.spending`. */
+export function isSpendingAccount(account: Account): boolean {
+  return account.spending ?? account.type === "everyday";
 }
 
 /** Where one group's categorized transactions are written. `kind` selects the
@@ -59,7 +69,10 @@ export async function loadAccountsConfig(): Promise<AccountsConfig> {
         "config/accounts.json and fill in your accounts.",
     );
   }
+  return parseAccountsConfig(raw);
+}
 
+export function parseAccountsConfig(raw: string): AccountsConfig {
   let parsed: AccountsConfig;
   try {
     parsed = JSON.parse(raw) as AccountsConfig;
@@ -99,6 +112,11 @@ function validate(config: AccountsConfig): void {
       throw new AccountsConfigError(`Duplicate account id "${account.id}".`);
     }
     seen.add(account.id);
+    if ("spending" in account && typeof account.spending !== "boolean") {
+      throw new AccountsConfigError(
+        `Account "${account.id}" has a non-boolean "spending".`,
+      );
+    }
     if (!config.groups[account.group]) {
       throw new AccountsConfigError(
         `Account "${account.id}" references group "${account.group}", ` +

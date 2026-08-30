@@ -87,8 +87,11 @@ tag a transaction for later. Flags live in their own `flag` table (schema v3),
 are keyed by the content-hash transaction id, and **survive re-imports**. v1
 kinds:
 
-- **wrong account** — paid from the wrong account. Record which account it should
-  have been, plus an optional note. Next batch, its correcting transfer shows up
+- **wrong account** — paid from the wrong account. The "should have been" target
+  is the *other* account money is spent from (accounts with `spending: true` in
+  `accounts.json`); when that's a single account it's filled in automatically and
+  a picker appears only if it's ambiguous. Add an optional note. Next batch, its
+  correcting transfer shows up
   as new rows; in the review's follow-up section you pick that transfer to
   **link** it — the flag flips to *resolved* (`correctedByTxnId`), leaving a
   permanent record. `reopen` undoes the link.
@@ -180,7 +183,10 @@ component source under `components/ui/`). `components.json` configures the
 
 ## Config: `config/accounts.json`
 
-- `accounts[]` — `id`, `label`, `number` (drives transfer detection), `type`, `group`
+- `accounts[]` — `id`, `label`, `number` (drives transfer detection), `type`,
+  `group`, and optional `spending` (bool — is money paid out of this account?
+  drives the "wrong account" flag's candidate list; defaults to
+  `type === "everyday"`)
 - `groups{}` — one entry per group, each with a `sink` describing where that
   group's data is written. The `sink` is not wired up yet; `kind` picks the
   implementation (`google-sheets`, later `excel`), the rest is passed through.
@@ -220,7 +226,7 @@ lib/rules/
   apply.ts                applyRules(transactions, rules) -> RuleMatch[] (pure, tested)
   run.ts                  Run rules over the DB's pending rows
 lib/accounts/
-  config.ts               Load + validate config/accounts.json
+  config.ts               Load / parse / validate config/accounts.json (+ isSpendingAccount), tested
 lib/categories/
   config.ts               Load / validate / mutate / write config/categories.json (pure fns tested)
 lib/transactions/

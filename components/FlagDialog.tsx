@@ -68,29 +68,42 @@ export default function FlagDialog({
     setError(null);
   }, [open, transaction.id]);
 
+  const accountLabel = (id: string | undefined) =>
+    accounts?.find((a) => a.id === id)?.label ?? id;
+
+  // "Should have been" is another account money is spent from (config-driven via
+  // Account.spending). When that's a single account, skip the picker entirely.
+  const spendingTargets = (accounts ?? []).filter(
+    (a) => a.spending && a.id !== transaction.accountId,
+  );
   const otherAccounts = (accounts ?? []).filter(
     (a) => a.id !== transaction.accountId,
   );
-  const accountLabel = (id: string | undefined) =>
-    accounts?.find((a) => a.id === id)?.label ?? id;
+  const derivedTarget =
+    spendingTargets.length === 1 ? spendingTargets[0] : undefined;
+  const pickList = spendingTargets.length > 0 ? spendingTargets : otherAccounts;
 
   const canAdd =
     !busy &&
     (kind === "note"
       ? noteText.trim().length > 0
-      : shouldBeAccountId !== "" || wrongAccountNote.trim().length > 0);
+      : Boolean(derivedTarget) ||
+        shouldBeAccountId !== "" ||
+        wrongAccountNote.trim().length > 0);
 
   async function add() {
     if (!canAdd) return;
     setBusy(true);
     setError(null);
+    const targetId = derivedTarget?.id ?? shouldBeAccountId;
     const data =
       kind === "note"
         ? { text: noteText.trim() }
         : {
-            shouldBeAccountId: shouldBeAccountId || undefined,
-            shouldBeGroup: otherAccounts.find((a) => a.id === shouldBeAccountId)
-              ?.group,
+            shouldBeAccountId: targetId || undefined,
+            shouldBeGroup:
+              derivedTarget?.group ??
+              otherAccounts.find((a) => a.id === targetId)?.group,
             note: wrongAccountNote.trim() || undefined,
           };
     const res = await onAdd(kind, data);
@@ -177,22 +190,31 @@ export default function FlagDialog({
             {kind === "wrong_account" ? (
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="flag-should-be">Should have been paid from</Label>
-                  <Select
-                    value={shouldBeAccountId || undefined}
-                    onValueChange={setShouldBeAccountId}
-                  >
-                    <SelectTrigger id="flag-should-be" className="w-full">
-                      <SelectValue placeholder="Pick an account (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {otherAccounts.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.label} · {a.group}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Should have been paid from</Label>
+                  {derivedTarget ? (
+                    <p className="text-sm">
+                      <span className="font-medium">{derivedTarget.label}</span>{" "}
+                      <span className="text-muted-foreground">
+                        · {derivedTarget.group}
+                      </span>
+                    </p>
+                  ) : (
+                    <Select
+                      value={shouldBeAccountId || undefined}
+                      onValueChange={setShouldBeAccountId}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Pick an account (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pickList.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.label} · {a.group}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="flag-wa-note">Note (optional)</Label>
@@ -200,7 +222,7 @@ export default function FlagDialog({
                     id="flag-wa-note"
                     value={wrongAccountNote}
                     onChange={(e) => setWrongAccountNote(e.target.value)}
-                    placeholder="e.g. move this to personal next time I'm in the app"
+                    placeholder="e.g. sort this out on my next banking visit"
                   />
                 </div>
               </div>

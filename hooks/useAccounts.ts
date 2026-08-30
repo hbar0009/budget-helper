@@ -7,6 +7,8 @@ export interface AccountLite {
   label: string;
   type: string;
   group: string;
+  /** Money is paid out of this account (server-resolved from `Account.spending`). */
+  spending: boolean;
 }
 
 /** Loads the account list from `/api/accounts` (no numbers / sink config). */
