@@ -4,8 +4,8 @@ A simple app to assist in the process of categorizing and adding transaction dat
 
 ## Status
 
-Import, transfer reconciliation, the categorization card + review screen, and
-local SQLite persistence are built. Spreadsheet sync is not started.
+Import, transfer reconciliation, the categorization card + review screen, local
+SQLite persistence, and the Google Sheets sink are built.
 
 ## Setup
 
@@ -13,6 +13,7 @@ local SQLite persistence are built. Spreadsheet sync is not started.
 npm install
 cp config/accounts.example.json config/accounts.json   # then edit it
 cp config/rules.example.json config/rules.json          # optional — auto-categorization
+cp config/service-account.example.json config/service-account.json  # optional — Google Sheets push
 npm run dev
 ```
 
@@ -79,7 +80,8 @@ Review`, driven by `app/page.tsx`):
 - **Review** — per-group (`personal` / `shared`) net totals broken down by
   category → subcategory, plus counts of skipped / pending / netted / cross-group
   rows, a list of skipped transactions, and a **Needs follow-up** section (see
-  Flags). `Download CSV` is a stopgap until the `sink` exists.
+  Flags). **Push to Sheets** writes the categorized rows to each group's sink
+  (see Sinks); `Download CSV` is an offline alternative.
 
 ## Flags & follow-up
 
@@ -153,6 +155,47 @@ outstanding.
 Logic in `lib/db/reimbursements.ts` (tested vs `:memory:`); `collectReimbursements`
 in `lib/transactions/summary.ts` rolls claims up by person and computes the
 repayment hints (pure, tested).
+
+## Sinks — push to a spreadsheet
+
+The **Push to Sheets** button on the Review screen (`POST /api/sink/push`) writes
+each group's categorized rows to the `sink` configured for it in
+`config/accounts.json`. `kind` picks the implementation — `google-sheets` today,
+`excel` later — behind the common `Sink` interface in `lib/sink/`.
+
+**What gets pushed.** One row per transaction that is *categorized*,
+*budget-relevant* (netted transfers stay out), and *not itself a repayment
+credit* (its money is already folded into the fronted debit's `net`, so a row of
+its own would double-count). Skipped and pending rows are held back.
+
+**Columns** (`id · date · description · account · category · subcategory · gross ·
+reimbursed · net · reimb_status · owed_by`). For a plain transaction `gross ==
+net`, `reimbursed` is 0, and the last two are blank. When the transaction has
+reimbursement claims, `reimbursed` is how much has actually been **repaid** so
+far (offsetting `gross` toward zero), `net = gross + reimbursed`, `reimb_status`
+is `open` / `partial` / `settled`, and `owed_by` lists the people.
+
+**Re-push is an upsert.** Rows are matched by the `id` column, so pushing again
+after categorizing more — or after a repayment lands weeks later — updates the
+changed rows in place and appends the new ones. Nothing is ever deleted. The
+first push writes the header row; after that you can reorder columns or add your
+own to the right and they're preserved (the `id` column just has to stay). Each
+group is pushed independently, so one failing (bad config, auth) still pushes the
+other and the response reports per-group `{ added, updated, unchanged }` or
+`{ error }`.
+
+**Auth.** A Google service-account key JSON at `config/service-account.json`
+(gitignored; copy `config/service-account.example.json`, override the path with
+`BUDGET_GOOGLE_KEY_PATH`). In Google Cloud: create a service account, enable the
+Google Sheets API, add a JSON key; then **share each target spreadsheet with the
+key's `client_email`** as an Editor. `spreadsheetId` and `tab` go in the group's
+`sink` block.
+
+- `lib/sink/rows.ts` — `buildSinkRowsByGroup(transactions, accounts)` (pure, tested)
+- `lib/sink/plan.ts` — `planSheetWrite(existing, desired)` → the minimal set of
+  header / update / append writes (pure, tested — this is the upsert)
+- `lib/sink/sheets.ts` — the Sheets v4 REST adapter (`google-auth-library` + `fetch`)
+- `lib/sink/index.ts` — `sinkFor(sinkConfig)` on `kind`
 
 ## Persistence
 
@@ -231,8 +274,9 @@ component source under `components/ui/`). `components.json` configures the
   drives the "wrong account" flag's candidate list; defaults to
   `type === "everyday"`)
 - `groups{}` — one entry per group, each with a `sink` describing where that
-  group's data is written. The `sink` is not wired up yet; `kind` picks the
-  implementation (`google-sheets`, later `excel`), the rest is passed through.
+  group's data is written. `kind` picks the implementation; for
+  `google-sheets` the rest is `spreadsheetId` + `tab` (see Sinks). `excel` is
+  not implemented yet.
 
 ## Layout
 
@@ -255,6 +299,7 @@ app/
   api/repayments/[id]/route.ts              DELETE — unlink a repayment
   api/rules/route.ts               POST — append a rule + apply it now
   api/rules/apply/route.ts         POST — re-run rules over pending rows
+  api/sink/push/route.ts           POST — push each group's rows to its sink spreadsheet
 components/
   ui/                     shadcn primitives (button, card, dialog, select, textarea, ...)
   AppHeader, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
@@ -277,6 +322,11 @@ lib/rules/
   run.ts                  Run rules over the DB's pending rows
 lib/accounts/
   config.ts               Load / parse / validate config/accounts.json (+ isSpendingAccount), tested
+lib/sink/
+  rows.ts                 buildSinkRowsByGroup(transactions, accounts) -> per-group SinkRow[] (pure, tested)
+  plan.ts                 planSheetWrite(existing, desired) -> minimal header/update/append writes (the upsert; pure, tested)
+  sheets.ts               google-sheets sink: Sheets v4 REST via google-auth-library + fetch
+  index.ts                sinkFor(sinkConfig) -> Sink, on `kind`
 lib/categories/
   config.ts               Load / validate / mutate / write config/categories.json (pure fns tested)
 lib/transactions/
@@ -294,6 +344,8 @@ config/
   categories.json         Category / subcategory taxonomy (committed, edit freely)
   rules.example.json      Template (committed)
   rules.json              Your auto-categorization rules (gitignored, optional)
+  service-account.example.json  Template for the Google key (committed)
+  service-account.json    Your Google service-account key (gitignored)
 ```
 
 ## Adding another bank
@@ -310,4 +362,4 @@ Add a `BankProfile` to `lib/transactions/profiles.ts` and push it onto
 5. ~~Auto-categorization from `config/rules.json` + an auto-review step.~~ Done.
 6. ~~Flags substrate + wrong-account / note flags + review follow-up section.~~ Done (Phase 1).
 7. ~~Reimbursement / split-expense tracking — per-person claims on a fronted debit, repayment linking (bank credit or cash), auto-settle, "Owed to you" review with repayment hints.~~ Done (Parts A + B).
-8. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.
+8. ~~Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.~~ Done (Google Sheets; upsert by transaction id).

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,15 @@ import {
 } from "@/lib/transactions/summary";
 
 type Result = { ok: boolean; error?: string };
+
+type PushGroupResult = {
+  group: string;
+  rows: number;
+  added?: number;
+  updated?: number;
+  unchanged?: number;
+  error?: string;
+};
 
 interface Props {
   transactions: StoredTransaction[];
@@ -118,6 +127,32 @@ export default function ReviewStage({
     link.download = "categorized-transactions.csv";
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  const [pushing, setPushing] = useState(false);
+  const [pushResults, setPushResults] = useState<PushGroupResult[] | null>(null);
+  const [pushError, setPushError] = useState<string | null>(null);
+
+  async function pushToSheets() {
+    setPushing(true);
+    setPushError(null);
+    setPushResults(null);
+    try {
+      const res = await fetch("/api/sink/push", { method: "POST" });
+      const data = (await res.json()) as {
+        results?: PushGroupResult[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setPushError(data.error ?? `Push failed (${res.status}).`);
+        return;
+      }
+      setPushResults(data.results ?? []);
+    } catch (err) {
+      setPushError(err instanceof Error ? err.message : "Push failed.");
+    } finally {
+      setPushing(false);
+    }
   }
 
   return (
@@ -260,16 +295,38 @@ export default function ReviewStage({
           <Button variant="outline" onClick={downloadCsv}>
             Download CSV
           </Button>
-          <Button disabled title="Sheet sync is the next feature">
-            Sync to Google Sheets
+          <Button onClick={pushToSheets} disabled={pushing}>
+            {pushing ? "Pushing…" : "Push to Sheets"}
           </Button>
         </div>
       </div>
 
+      {pushError && (
+        <p className="text-destructive text-xs">{pushError}</p>
+      )}
+      {pushResults && (
+        <ul className="text-muted-foreground space-y-0.5 text-xs">
+          {pushResults.map((r) => (
+            <li key={r.group}>
+              <span className="text-foreground capitalize">{r.group}</span>:{" "}
+              {r.error ? (
+                <span className="text-destructive">{r.error}</span>
+              ) : r.rows === 0 ? (
+                "nothing to push"
+              ) : (
+                `${r.added} added, ${r.updated} updated, ${r.unchanged} unchanged`
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
       <p className="text-muted-foreground text-xs">
-        CSV export is a stopgap. Writing to Google Sheets / Excel via the
-        per-group <code className="text-foreground">sink</code> is the next
-        feature. Everything is saved in the local database as you go.
+        Push writes each group&apos;s categorized rows to its configured{" "}
+        <code className="text-foreground">sink</code> spreadsheet, matching on
+        transaction id — safe to run again after categorizing more or logging a
+        repayment. CSV export is an offline stopgap. Everything is saved locally
+        as you go.
       </p>
 
       <Button variant="ghost" size="sm" onClick={onReset}>
