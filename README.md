@@ -70,8 +70,8 @@ Review`, driven by `app/page.tsx`):
   them). Pick a
   category, then a subcategory, via a keyboard-first filter box: type to narrow,
   `↑`/`↓` to move, `Enter` to pick. `⌥S` skips, `⌥F` flags, `⌥P` splits,
-  `⌥←` / `⌥→` move between cards. Picking a subcategory auto-advances. If your
-  text matches nothing, a
+  `⌥R` links a repayment (on a credit), `⌥←` / `⌥→` move between cards. Picking a
+  subcategory auto-advances. If your text matches nothing, a
   **Create "…"** row appears — selecting it adds the category/subcategory (a new
   category is written only once you name its first subcategory) and `POST`s it to
   `config/categories.json` so it sticks for later sessions. New entries append to
@@ -127,18 +127,32 @@ The fronted debit is still categorized as the normal expense it is (claims are
 to you** card groups open claims by person with a total to chase; per claim you
 can toggle *followed up*, *mark settled*, or *write off* (and *reopen*).
 
-*Part A* (built) covers tracking + manual settle. *Part B* (planned) adds linking
-the actual incoming repayment credit, partial-repaid tracking, and a nudge for
-income-categorized credits that look like unlinked repayments.
+**Repayments.** When a friend pays you back, link the incoming credit to their
+claim(s): **↩ Repayment** (`⌥R`) on a candidate credit card in the deck (a
+candidate is an incoming credit with `transfer_state` `none` / `unmatched`) opens
+a dialog that lists open claims by person — tick the people this credit covers.
+The review's *Owed to you* card also has a per-claim recorder (pick a candidate
+credit, or **cash** for money handed over outside the bank). Each becomes a
+`reimbursement_repayment` row (schema v5) — `claim_id`, `txn_id` (null = cash),
+`amount`. Derived per claim: `repaid = Σ repayments`, `outstanding = expected −
+repaid`; a repayment that clears the balance **auto-settles** the claim (deleting
+one never auto-reopens it). A **Possible repayments** list at the top of the
+section surfaces unlinked candidate credits whose amount matches an open claim's
+outstanding.
 
 - `POST /api/transactions/:id/claims` — `{ claims: [{ person, expected?, note? }] }`.
 - `PATCH /api/claims/:id` — `{ person?, expected?, note? }`, `{ status }`,
   `{ followedUp: boolean }`.
 - `DELETE /api/claims/:id`.
+- `POST /api/transactions/:id/repayments` — `{ repayments: [{ claimId, amount }] }`
+  (one credit split across several claims).
+- `POST /api/claims/:id/repayments` — `{ txnId: string | null, amount }`
+  (single; `txnId: null` = cash).
+- `DELETE /api/repayments/:id`.
 
 Logic in `lib/db/reimbursements.ts` (tested vs `:memory:`); `collectReimbursements`
-in `lib/transactions/summary.ts` rolls claims up by person for the review (pure,
-tested).
+in `lib/transactions/summary.ts` rolls claims up by person and computes the
+repayment hints (pure, tested).
 
 ## Persistence
 
@@ -232,18 +246,21 @@ app/
   api/import/route.ts     POST files + accountIds -> parse, reconcile, upsert, auto-categorize
   api/transactions/route.ts             GET stored rows (+?status=) / DELETE all
   api/transactions/[id]/route.ts        PATCH one row (categorize / skip / undo)
-  api/transactions/[id]/flags/route.ts   POST — add a flag to a transaction
-  api/transactions/[id]/claims/route.ts  POST — add reimbursement claims (a split)
-  api/flags/[id]/route.ts                PATCH (edit / resolve / reopen) / DELETE a flag
-  api/claims/[id]/route.ts               PATCH (edit / settle / write off / followed-up) / DELETE
+  api/transactions/[id]/flags/route.ts      POST — add a flag to a transaction
+  api/transactions/[id]/claims/route.ts     POST — add reimbursement claims (a split)
+  api/transactions/[id]/repayments/route.ts POST — link one credit to several claims
+  api/flags/[id]/route.ts                   PATCH (edit / resolve / reopen) / DELETE a flag
+  api/claims/[id]/route.ts                  PATCH (edit / settle / write off / followed-up) / DELETE
+  api/claims/[id]/repayments/route.ts       POST — record a repayment (credit or cash)
+  api/repayments/[id]/route.ts              DELETE — unlink a repayment
   api/rules/route.ts               POST — append a rule + apply it now
   api/rules/apply/route.ts         POST — re-run rules over pending rows
 components/
   ui/                     shadcn primitives (button, card, dialog, select, textarea, ...)
   AppHeader, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
   TransactionCard, CategoryPicker, RuleDialog, FlagDialog, FlagChips,
-  SplitDialog, ReimbursementChip, ReviewStage, FollowUpSection,
-  ReimbursementSection, StatCard
+  SplitDialog, RepaymentDialog, ReimbursementChip, ReviewStage,
+  FollowUpSection, ReimbursementSection, StatCard
 hooks/useCategories.ts    Fetch the taxonomy
 hooks/useAccounts.ts      Fetch the account list
 lib/utils.ts              cn() class-name helper
@@ -253,7 +270,7 @@ lib/db/
   schema.ts               Schema + user_version migrations
   transactions.ts         Typed queries (upsert / list / setCategorization / applyRuleCategorizations / ...), tested vs :memory:
   flags.ts                Flag CRUD + resolve/reopen (wrong-account, notes), tested vs :memory:
-  reimbursements.ts       Reimbursement-claim CRUD (per-person "owes you"), tested vs :memory:
+  reimbursements.ts       Claim + repayment CRUD (per-person "owes you", auto-settle), tested vs :memory:
 lib/rules/
   config.ts               Load / validate / append / write config/rules.json (pure fns tested)
   apply.ts                applyRules(transactions, rules) -> RuleMatch[] (pure, tested)
@@ -292,5 +309,5 @@ Add a `BankProfile` to `lib/transactions/profiles.ts` and push it onto
 4. ~~Persist transactions + categorizations locally (SQLite).~~ Done.
 5. ~~Auto-categorization from `config/rules.json` + an auto-review step.~~ Done.
 6. ~~Flags substrate + wrong-account / note flags + review follow-up section.~~ Done (Phase 1).
-7. Reimbursement / split-expense tracking — per-person claims on a fronted debit + an "Owed to you" review section. Part A (track + settle by hand) done; Part B (link the incoming repayment credit + partial-repaid tracking + income nudge) planned.
+7. ~~Reimbursement / split-expense tracking — per-person claims on a fronted debit, repayment linking (bank credit or cash), auto-settle, "Owed to you" review with repayment hints.~~ Done (Parts A + B).
 8. Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.

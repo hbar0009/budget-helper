@@ -17,9 +17,13 @@ import {
 } from "./flags.ts";
 import {
   type Claim,
+  type Repayment,
   claimsByTxn,
   claimsForTxn,
   deleteAllClaims,
+  deleteAllRepayments,
+  repaymentsByTxn,
+  repaymentsForTxn,
 } from "./reimbursements.ts";
 
 export type TxnStatus = "pending" | "categorized" | "skipped" | "excluded";
@@ -39,6 +43,8 @@ export interface StoredTransaction extends ReconciledTransaction {
   flags: Flag[];
   /** Reimbursement claims where this transaction is the fronted expense. */
   claims: Claim[];
+  /** Repayments funded by this transaction (when it's an incoming credit). */
+  repaymentsFunded: Repayment[];
 }
 
 interface Row {
@@ -66,6 +72,7 @@ function toStored(
   row: Row,
   flags: Flag[] = [],
   claims: Claim[] = [],
+  repaymentsFunded: Repayment[] = [],
 ): StoredTransaction {
   return {
     id: row.id,
@@ -88,6 +95,7 @@ function toStored(
     categorizedAt: row.categorized_at,
     flags,
     claims,
+    repaymentsFunded,
   };
 }
 
@@ -150,8 +158,9 @@ export function listTransactions(
     : db.prepare(`SELECT * FROM transactions ORDER BY date ASC, id`).all();
   const flags = flagsByTxn(db);
   const claims = claimsByTxn(db);
+  const repayments = repaymentsByTxn(db);
   return (rows as Row[]).map((r) =>
-    toStored(r, flags[r.id] ?? [], claims[r.id] ?? []),
+    toStored(r, flags[r.id] ?? [], claims[r.id] ?? [], repayments[r.id] ?? []),
   );
 }
 
@@ -163,7 +172,12 @@ export function getTransaction(
     .prepare(`SELECT * FROM transactions WHERE id = ?`)
     .get(id) as Row | undefined;
   return row
-    ? toStored(row, flagsForTxn(db, id), claimsForTxn(db, id))
+    ? toStored(
+        row,
+        flagsForTxn(db, id),
+        claimsForTxn(db, id),
+        repaymentsForTxn(db, id),
+      )
     : undefined;
 }
 
@@ -260,6 +274,7 @@ export function statusCounts(
 
 export function deleteAllTransactions(db: Database.Database): void {
   deleteAllFlags(db);
+  deleteAllRepayments(db);
   deleteAllClaims(db);
   db.prepare(`DELETE FROM transactions`).run();
 }

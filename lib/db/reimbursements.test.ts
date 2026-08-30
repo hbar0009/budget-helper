@@ -5,17 +5,25 @@ import Database from "better-sqlite3";
 import {
   ClaimError,
   addClaims,
+  addRepayment,
   deleteAllClaims,
+  deleteAllRepayments,
   deleteClaim,
+  deleteRepayment,
   claimsByTxn,
   getClaim,
   listClaims,
+  listRepayments,
   normalizeClaimInput,
+  normalizeRepaymentInput,
   updateClaim,
 } from "./reimbursements.ts";
 import { migrate } from "./schema.ts";
 import { upsertTransactions } from "./transactions.ts";
-import type { ReconciledTransaction } from "../transactions/types.ts";
+import type {
+  ReconciledTransaction,
+  TransferState,
+} from "../transactions/types.ts";
 
 let seq = 0;
 function freshDb() {
@@ -39,6 +47,34 @@ function seedTxn(db: Database.Database, id = `t${(seq += 1)}`): string {
     counterpartyAccountId: null,
   };
   upsertTransactions(db, [t], "now");
+  return id;
+}
+
+function seedCredit(
+  db: Database.Database,
+  amount = 25,
+  transferState: TransferState = "none",
+  id = `c${(seq += 1)}`,
+): string {
+  upsertTransactions(
+    db,
+    [
+      {
+        id,
+        date: "2026-08-20",
+        description: "OSKO FROM A FRIEND",
+        amount,
+        direction: "credit",
+        balance: null,
+        accountId: "personal-everyday",
+        group: "personal",
+        transferState,
+        transferPairId: null,
+        counterpartyAccountId: null,
+      },
+    ],
+    "now",
+  );
   return id;
 }
 
@@ -123,4 +159,88 @@ test("deleteClaim and deleteAllClaims remove rows", () => {
   deleteAllClaims(db);
   assert.equal(listClaims(db).length, 0);
   assert.equal(getClaim(db, a.id), undefined);
+});
+
+// --- repayments (Part B) ---------------------------------------------------
+
+test("normalizeRepaymentInput validates amount and trims txnId", () => {
+  assert.deepEqual(normalizeRepaymentInput({ amount: 10.005, txnId: " c1 " }), {
+    amount: 10.01,
+    txnId: "c1",
+  });
+  assert.deepEqual(normalizeRepaymentInput({ amount: 5 }), {
+    amount: 5,
+    txnId: null,
+  });
+  assert.throws(() => normalizeRepaymentInput({ amount: 0 }), ClaimError);
+  assert.throws(() => normalizeRepaymentInput({ amount: -1 }), ClaimError);
+});
+
+test("addRepayment lowers outstanding and fills repayments", () => {
+  const db = freshDb();
+  const debit = seedTxn(db);
+  const credit = seedCredit(db, 25);
+  const [claim] = addClaims(db, debit, [{ person: "Bob", expected: 40 }]);
+
+  const after = addRepayment(db, claim.id, { txnId: credit, amount: 25 });
+  assert.equal(after.repaid, 25);
+  assert.equal(after.outstanding, 15);
+  assert.equal(after.status, "open");
+  assert.equal(after.repayments.length, 1);
+  assert.equal(after.repayments[0].txnId, credit);
+});
+
+test("addRepayment auto-settles a claim once fully repaid", () => {
+  const db = freshDb();
+  const debit = seedTxn(db);
+  const [claim] = addClaims(db, debit, [{ person: "Bob", expected: 25 }]);
+
+  const cash = addRepayment(db, claim.id, { amount: 25, txnId: null });
+  assert.equal(cash.status, "settled");
+  assert.equal(cash.outstanding, 0);
+  assert.equal(cash.repayments[0].txnId, null);
+});
+
+test("addRepayment rejects a non-credit funding transaction", () => {
+  const db = freshDb();
+  const debit = seedTxn(db);
+  const transfer = seedCredit(db, 25, "cross_group");
+  const [claim] = addClaims(db, debit, [{ person: "Bob", expected: 25 }]);
+
+  assert.throws(
+    () => addRepayment(db, claim.id, { txnId: debit, amount: 10 }),
+    ClaimError,
+  );
+  assert.throws(
+    () => addRepayment(db, claim.id, { txnId: transfer, amount: 10 }),
+    ClaimError,
+  );
+  assert.throws(
+    () => addRepayment(db, "nope", { amount: 10, txnId: null }),
+    ClaimError,
+  );
+});
+
+test("deleteRepayment lowers repaid but does not reopen a settled claim", () => {
+  const db = freshDb();
+  const debit = seedTxn(db);
+  const [claim] = addClaims(db, debit, [{ person: "Bob", expected: 25 }]);
+  const settled = addRepayment(db, claim.id, { amount: 25, txnId: null });
+  assert.equal(settled.status, "settled");
+
+  const back = deleteRepayment(db, settled.repayments[0].id)!;
+  assert.equal(back.repaid, 0);
+  assert.equal(back.status, "settled"); // stays settled — reopen by hand
+  assert.equal(listRepayments(db).length, 0);
+});
+
+test("deleteAllRepayments clears the table", () => {
+  const db = freshDb();
+  const debit = seedTxn(db);
+  const [claim] = addClaims(db, debit, [{ person: "Bob", expected: 25 }]);
+  addRepayment(db, claim.id, { amount: 10, txnId: null });
+
+  deleteAllRepayments(db);
+  assert.equal(listRepayments(db).length, 0);
+  assert.equal(getClaim(db, claim.id)!.repaid, 0);
 });

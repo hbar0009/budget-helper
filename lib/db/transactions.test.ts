@@ -3,7 +3,12 @@ import { test } from "node:test";
 import Database from "better-sqlite3";
 
 import { addFlag, listFlags } from "./flags.ts";
-import { addClaims, listClaims } from "./reimbursements.ts";
+import {
+  addClaims,
+  addRepayment,
+  listClaims,
+  listRepayments,
+} from "./reimbursements.ts";
 import { migrate } from "./schema.ts";
 import {
   applyRuleCategorizations,
@@ -175,17 +180,34 @@ test("listTransactions filters by status", () => {
   assert.equal(listTransactions(db, { status: "categorized" }).length, 1);
 });
 
-test("deleteAllTransactions empties the table, its flags, and its claims", () => {
+test("deleteAllTransactions empties the table, flags, claims, and repayments", () => {
   const db = freshDb();
   const a = txn({ amount: -1 });
-  upsertTransactions(db, [a], "now");
+  const credit = txn({ amount: 5 });
+  upsertTransactions(db, [a, credit], "now");
   addFlag(db, a.id, "note", { text: "later" });
-  addClaims(db, a.id, [{ person: "Alice" }]);
+  const [claim] = addClaims(db, a.id, [{ person: "Alice", expected: 5 }]);
+  addRepayment(db, claim.id, { txnId: credit.id, amount: 5 });
 
   deleteAllTransactions(db);
   assert.equal(listTransactions(db).length, 0);
   assert.equal(listFlags(db).length, 0);
   assert.equal(listClaims(db).length, 0);
+  assert.equal(listRepayments(db).length, 0);
+});
+
+test("a credit row carries the repayments it funds", () => {
+  const db = freshDb();
+  const debit = txn({ amount: -20 });
+  const credit = txn({ amount: 12 });
+  upsertTransactions(db, [debit, credit], "now");
+  const [claim] = addClaims(db, debit.id, [{ person: "Bob", expected: 20 }]);
+  addRepayment(db, claim.id, { txnId: credit.id, amount: 12 });
+
+  const stored = getTransaction(db, credit.id)!;
+  assert.equal(stored.repaymentsFunded.length, 1);
+  assert.equal(stored.repaymentsFunded[0].amount, 12);
+  assert.equal(getTransaction(db, debit.id)!.claims[0].repaid, 12);
 });
 
 test("stored rows carry their flags and claims", () => {

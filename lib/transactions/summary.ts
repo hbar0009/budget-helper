@@ -203,27 +203,46 @@ export interface ClaimRow {
 
 export interface PersonOwed {
   person: string;
-  /** Sum of `expected` across this person's still-open claims. */
+  /** Sum of still-outstanding amounts across this person's open claims. */
   openTotal: number;
   /** True if any open claim has no `expected` set yet. */
   hasUnknown: boolean;
   claims: ClaimRow[];
 }
 
+/** A credit that looks like it repays an open claim, by amount. */
+export interface RepaymentHint {
+  credit: StoredTransaction;
+  claim: Claim;
+  claimTxn: StoredTransaction;
+}
+
 export interface Reimbursements {
   anyClaims: boolean;
   /** Grouped by person, most owed first. */
   people: PersonOwed[];
+  /** Unlinked credits whose amount matches an open claim's outstanding. */
+  hints: RepaymentHint[];
+}
+
+/** Incoming credits that could be repayments: not own-account transfers. */
+export function isRepaymentCandidate(t: ReconciledTransaction): boolean {
+  return (
+    t.amount > 0 &&
+    (t.transferState === "none" || t.transferState === "unmatched")
+  );
 }
 
 /**
  * Roll every transaction's reimbursement claims up by person for the review
- * screen. Pure — claims are annotation-only, so the budget totals are untouched.
+ * screen, and flag unlinked credits that look like repayments. Pure — claims are
+ * annotation-only, so the budget totals are untouched.
  */
 export function collectReimbursements(
   transactions: StoredTransaction[],
 ): Reimbursements {
   const byPerson = new Map<string, PersonOwed>();
+  const openClaims: { claim: Claim; txn: StoredTransaction }[] = [];
 
   for (const txn of transactions) {
     for (const claim of txn.claims ?? []) {
@@ -240,8 +259,9 @@ export function collectReimbursements(
       }
       entry.claims.push({ claim, txn });
       if (claim.status === "open") {
+        openClaims.push({ claim, txn });
         if (claim.expected === null) entry.hasUnknown = true;
-        else entry.openTotal = round2(entry.openTotal + claim.expected);
+        else entry.openTotal = round2(entry.openTotal + (claim.outstanding ?? 0));
       }
     }
   }
@@ -258,7 +278,23 @@ export function collectReimbursements(
     (a, b) => b.openTotal - a.openTotal || a.person.localeCompare(b.person),
   );
 
-  return { anyClaims: people.length > 0, people };
+  const hints: RepaymentHint[] = [];
+  for (const credit of transactions) {
+    if (!isRepaymentCandidate(credit)) continue;
+    if ((credit.repaymentsFunded ?? []).length > 0) continue;
+    for (const { claim, txn } of openClaims) {
+      if (
+        claim.outstanding !== null &&
+        claim.outstanding > 0 &&
+        Math.abs(claim.outstanding - credit.amount) < 0.005
+      ) {
+        hints.push({ credit, claim, claimTxn: txn });
+      }
+    }
+  }
+  hints.sort((a, b) => a.credit.date.localeCompare(b.credit.date));
+
+  return { anyClaims: people.length > 0, people, hints };
 }
 
 function mapGet<K, V>(map: Map<K, V>, key: K, create: () => V): V {

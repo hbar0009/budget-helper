@@ -26,6 +26,7 @@ import {
   buildReviewSummary,
   collectFollowUps,
   collectReimbursements,
+  isRepaymentCandidate,
   type CategorizationMap,
 } from "@/lib/transactions/summary";
 
@@ -41,6 +42,11 @@ interface Props {
     body: Record<string, unknown>,
   ) => Promise<Result>;
   onDeleteClaim: (claimId: string) => Promise<Result>;
+  onRecordRepayment: (
+    claimId: string,
+    body: { txnId: string | null; amount: number },
+  ) => Promise<Result>;
+  onDeleteRepayment: (repaymentId: string) => Promise<Result>;
   onBack: () => void;
   onReset: () => void;
 }
@@ -52,6 +58,8 @@ export default function ReviewStage({
   onDeleteFlag,
   onUpdateClaim,
   onDeleteClaim,
+  onRecordRepayment,
+  onDeleteRepayment,
   onBack,
   onReset,
 }: Props) {
@@ -65,6 +73,10 @@ export default function ReviewStage({
   );
   const reimbursements = useMemo(
     () => collectReimbursements(transactions),
+    [transactions],
+  );
+  const candidateCredits = useMemo(
+    () => transactions.filter(isRepaymentCandidate),
     [transactions],
   );
 
@@ -233,8 +245,11 @@ export default function ReviewStage({
 
       <ReimbursementSection
         reimbursements={reimbursements}
+        candidateCredits={candidateCredits}
         onUpdateClaim={onUpdateClaim}
         onDeleteClaim={onDeleteClaim}
+        onRecordRepayment={onRecordRepayment}
+        onDeleteRepayment={onDeleteRepayment}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">

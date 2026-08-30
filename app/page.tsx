@@ -7,6 +7,7 @@ import AutoReviewStage from "@/components/AutoReviewStage";
 import CategorizeStage from "@/components/CategorizeStage";
 import FlagDialog from "@/components/FlagDialog";
 import ImportStage from "@/components/ImportStage";
+import RepaymentDialog from "@/components/RepaymentDialog";
 import ReviewStage from "@/components/ReviewStage";
 import type { RuleInput } from "@/components/RuleDialog";
 import SplitDialog from "@/components/SplitDialog";
@@ -15,7 +16,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAccounts } from "@/hooks/useAccounts";
 import type { FlagKind } from "@/lib/db/flags";
 import type { StoredTransaction } from "@/lib/db/transactions";
-import type { CategorizationMap } from "@/lib/transactions/summary";
+import {
+  isRepaymentCandidate,
+  type CategorizationMap,
+} from "@/lib/transactions/summary";
 
 type MutationResult = { ok: boolean; error?: string };
 
@@ -37,6 +41,9 @@ export default function HomePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [flagTargetId, setFlagTargetId] = useState<string | null>(null);
   const [splitTargetId, setSplitTargetId] = useState<string | null>(null);
+  const [repaymentTargetId, setRepaymentTargetId] = useState<string | null>(
+    null,
+  );
   const { accounts } = useAccounts();
 
   const load = useCallback(async (): Promise<StoredTransaction[] | null> => {
@@ -248,6 +255,24 @@ export default function HomePage() {
     [annotationRequest],
   );
 
+  const linkRepayments = useCallback(
+    (creditId: string, repayments: { claimId: string; amount: number }[]) =>
+      annotationRequest(`/api/transactions/${creditId}/repayments`, "POST", {
+        repayments,
+      }),
+    [annotationRequest],
+  );
+  const recordRepayment = useCallback(
+    (claimId: string, body: { txnId: string | null; amount: number }) =>
+      annotationRequest(`/api/claims/${claimId}/repayments`, "POST", body),
+    [annotationRequest],
+  );
+  const deleteRepayment = useCallback(
+    (repaymentId: string) =>
+      annotationRequest(`/api/repayments/${repaymentId}`, "DELETE"),
+    [annotationRequest],
+  );
+
   async function handleImported() {
     const rows = await load();
     if (!rows) return;
@@ -318,6 +343,7 @@ export default function HomePage() {
     setNotice(null);
     setFlagTargetId(null);
     setSplitTargetId(null);
+    setRepaymentTargetId(null);
     setStage("import");
   }
 
@@ -326,6 +352,18 @@ export default function HomePage() {
     (transactions ?? []).find((t) => t.id === flagTargetId) ?? null;
   const splitTarget =
     (transactions ?? []).find((t) => t.id === splitTargetId) ?? null;
+  const repaymentTarget =
+    (transactions ?? []).find((t) => t.id === repaymentTargetId) ?? null;
+
+  const openClaimRows = useMemo(
+    () =>
+      (transactions ?? []).flatMap((txn) =>
+        txn.claims
+          .filter((claim) => claim.status === "open")
+          .map((claim) => ({ claim, txn })),
+      ),
+    [transactions],
+  );
 
   return (
     <>
@@ -359,6 +397,7 @@ export default function HomePage() {
             onUndo={undo}
             onFlag={setFlagTargetId}
             onSplit={setSplitTargetId}
+            onRepayment={setRepaymentTargetId}
             onRerun={handleRerun}
             onContinue={() => {
               if (categorizeDeck.length === 0) {
@@ -379,6 +418,7 @@ export default function HomePage() {
             onCreateRule={handleCreateRule}
             onFlag={setFlagTargetId}
             onSplit={setSplitTargetId}
+            onRepayment={setRepaymentTargetId}
             onComplete={() => setStage("review")}
           />
         ) : (
@@ -389,6 +429,8 @@ export default function HomePage() {
             onDeleteFlag={deleteFlag}
             onUpdateClaim={updateClaim}
             onDeleteClaim={deleteClaim}
+            onRecordRepayment={recordRepayment}
+            onDeleteRepayment={deleteRepayment}
             onBack={() => setStage("categorize")}
             onReset={handleReset}
           />
@@ -417,6 +459,18 @@ export default function HomePage() {
             onAdd={(claims) => addClaims(splitTarget.id, claims)}
             onUpdate={updateClaim}
             onDelete={deleteClaim}
+          />
+        )}
+
+        {repaymentTarget && isRepaymentCandidate(repaymentTarget) && (
+          <RepaymentDialog
+            open
+            onOpenChange={(o) => {
+              if (!o) setRepaymentTargetId(null);
+            }}
+            credit={repaymentTarget}
+            openClaims={openClaimRows}
+            onSubmit={(rows) => linkRepayments(repaymentTarget.id, rows)}
           />
         )}
       </main>

@@ -5,7 +5,7 @@ import ReimbursementChip from "@/components/ReimbursementChip";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Flag } from "@/lib/db/flags";
-import type { Claim } from "@/lib/db/reimbursements";
+import type { Claim, Repayment } from "@/lib/db/reimbursements";
 import { cn } from "@/lib/utils";
 import type { ReconciledTransaction } from "@/lib/transactions/types";
 
@@ -13,10 +13,12 @@ export default function TransactionCard({
   transaction,
   flags,
   claims,
+  repaymentsFunded,
 }: {
   transaction: ReconciledTransaction;
   flags?: Flag[];
   claims?: Claim[];
+  repaymentsFunded?: Repayment[];
 }) {
   const out = transaction.amount < 0;
   const [merchant, ...rest] = transaction.description.split(" - ");
@@ -49,10 +51,13 @@ export default function TransactionCard({
           </span>
         </div>
 
-        {flags?.length || claims?.length ? (
+        {flags?.length || claims?.length || repaymentsFunded?.length ? (
           <div className="flex flex-wrap gap-1">
             <FlagChips flags={flags} />
-            <ReimbursementChip claims={claims} />
+            <ReimbursementChip
+              claims={claims}
+              repaymentsFunded={repaymentsFunded}
+            />
           </div>
         ) : null}
 

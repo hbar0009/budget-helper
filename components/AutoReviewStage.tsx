@@ -21,12 +21,14 @@ import {
 import { formatSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { StoredTransaction } from "@/lib/db/transactions";
+import { isRepaymentCandidate } from "@/lib/transactions/summary";
 
 interface Props {
   transactions: StoredTransaction[];
   onUndo: (id: string) => void;
   onFlag: (txnId: string) => void;
   onSplit: (txnId: string) => void;
+  onRepayment: (txnId: string) => void;
   onRerun: () => Promise<void> | void;
   onContinue: () => void;
 }
@@ -43,6 +45,7 @@ export default function AutoReviewStage({
   onUndo,
   onFlag,
   onSplit,
+  onRepayment,
   onRerun,
   onContinue,
 }: Props) {
@@ -138,7 +141,10 @@ export default function AutoReviewStage({
                 <span className="flex min-w-0 flex-1 items-center gap-2">
                   <span className="truncate">{t.description}</span>
                   <FlagChips flags={t.flags} />
-                  <ReimbursementChip claims={t.claims} />
+                  <ReimbursementChip
+                    claims={t.claims}
+                    repaymentsFunded={t.repaymentsFunded}
+                  />
                 </span>
                 <span
                   className={
@@ -166,6 +172,17 @@ export default function AutoReviewStage({
                 >
                   <UsersIcon />
                 </Button>
+                {isRepaymentCandidate(t) && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0"
+                    aria-label="Link repayment"
+                    onClick={() => onRepayment(t.id)}
+                  >
+                    <Undo2Icon className="scale-x-[-1]" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"

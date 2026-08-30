@@ -11,7 +11,11 @@ import RuleDialog, { type RuleInput } from "@/components/RuleDialog";
 import TransactionCard from "@/components/TransactionCard";
 import { useCategories } from "@/hooks/useCategories";
 import type { StoredTransaction } from "@/lib/db/transactions";
-import { budgetDeck, type CategorizationMap } from "@/lib/transactions/summary";
+import {
+  budgetDeck,
+  isRepaymentCandidate,
+  type CategorizationMap,
+} from "@/lib/transactions/summary";
 
 interface Props {
   transactions: StoredTransaction[];
@@ -28,6 +32,8 @@ interface Props {
   onFlag: (txnId: string) => void;
   /** Open the split / reimbursement dialog for a transaction. */
   onSplit: (txnId: string) => void;
+  /** Open the repayment-link dialog for an incoming credit. */
+  onRepayment: (txnId: string) => void;
   onComplete: () => void;
 }
 
@@ -40,6 +46,7 @@ export default function CategorizeStage({
   onCreateRule,
   onFlag,
   onSplit,
+  onRepayment,
   onComplete,
 }: Props) {
   const { categories, error, addCategory } = useCategories();
@@ -144,6 +151,9 @@ export default function CategorizeStage({
       } else if (e.key === "p" || e.key === "P") {
         e.preventDefault();
         if (current) onSplit(current.id);
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        if (current && isRepaymentCandidate(current)) onRepayment(current.id);
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         goto(index - 1);
@@ -154,7 +164,7 @@ export default function CategorizeStage({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [skip, goto, index, current, onFlag, onSplit]);
+  }, [skip, goto, index, current, onFlag, onSplit, onRepayment]);
 
   if (error) {
     return (
@@ -230,6 +240,7 @@ export default function CategorizeStage({
         transaction={current!}
         flags={current!.flags}
         claims={current!.claims}
+        repaymentsFunded={current!.repaymentsFunded}
       />
 
       {step === "category" ? (
@@ -292,10 +303,19 @@ export default function CategorizeStage({
           <Button variant="ghost" onClick={() => onSplit(current!.id)}>
             ➗ Split
           </Button>
+          {isRepaymentCandidate(current!) && (
+            <Button
+              variant="ghost"
+              onClick={() => onRepayment(current!.id)}
+            >
+              ↩ Repayment
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
-            ⌥S skip · ⌥F flag · ⌥P split · ⌥← ⌥→ move
+            ⌥S skip · ⌥F flag · ⌥P split
+            {isRepaymentCandidate(current!) ? " · ⌥R repay" : ""} · ⌥← ⌥→ move
           </span>
           <Button variant="ghost" onClick={skip}>
             Skip

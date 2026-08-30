@@ -141,6 +141,7 @@ function stored(
     categorizedAt: null,
     flags: [],
     claims: [],
+    repaymentsFunded: [],
     ...partial,
   } as StoredTransaction;
 }
@@ -150,6 +151,7 @@ function claim(
   person: string,
   expected: number | null,
   status: ClaimStatus = "open",
+  repaid = 0,
 ): Claim {
   claimSeq += 1;
   return {
@@ -161,6 +163,9 @@ function claim(
     note: null,
     followedUpAt: null,
     createdAt: "2026-08-10T00:00:00.000Z",
+    repayments: [],
+    repaid,
+    outstanding: expected === null ? null : Math.round((expected - repaid) * 100) / 100,
   };
 }
 
@@ -247,5 +252,52 @@ test("collectReimbursements flags an unknown amount and returns empty when there
   assert.deepEqual(collectReimbursements([stored({ amount: -5 })]), {
     anyClaims: false,
     people: [],
+    hints: [],
   });
+});
+
+test("collectReimbursements openTotal follows outstanding, not expected", () => {
+  const golf = stored({
+    amount: -100,
+    claims: [claim("Bob", 25, "open", 10)], // repaid 10 → outstanding 15
+  });
+  const { people } = collectReimbursements([golf]);
+  assert.equal(people[0].openTotal, 15);
+});
+
+test("collectReimbursements hints match an unlinked credit to an open claim by amount", () => {
+  const golf = stored({
+    amount: -100,
+    date: "2026-08-05",
+    claims: [claim("Bob", 25), claim("Alice", 40)],
+  });
+  const bobPaid = stored({
+    amount: 25,
+    date: "2026-08-20",
+    description: "OSKO FROM BOB",
+  });
+  const noise = stored({ amount: 99, description: "SALARY" });
+
+  const { hints } = collectReimbursements([golf, bobPaid, noise]);
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0].credit.id, bobPaid.id);
+  assert.equal(hints[0].claim.person, "Bob");
+});
+
+test("collectReimbursements ignores a credit that already funds a repayment", () => {
+  const golf = stored({ amount: -100, claims: [claim("Bob", 25)] });
+  const bobPaid = stored({
+    amount: 25,
+    description: "OSKO FROM BOB",
+    repaymentsFunded: [
+      {
+        id: "r1",
+        claimId: "x",
+        txnId: "bob",
+        amount: 25,
+        createdAt: "2026-08-20",
+      },
+    ],
+  });
+  assert.equal(collectReimbursements([golf, bobPaid]).hints.length, 0);
 });
