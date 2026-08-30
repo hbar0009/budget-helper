@@ -65,7 +65,9 @@ number**, or both legs saying **"internal transfer"**. Pairs are labelled:
 After import the app steps through a three-stage flow (`Import → Categorize →
 Review`, driven by `app/page.tsx`):
 
-- **Categorize** — one card per transaction (netted transfers excluded). Pick a
+- **Categorize** — one card per transaction (netted transfers and rows a rule
+  already categorized are excluded — undo those from Auto-review to hand-edit
+  them). Pick a
   category, then a subcategory, via a keyboard-first filter box: type to narrow,
   `↑`/`↓` to move, `Enter` to pick. `⌥S` skips, `⌥←` / `⌥→` move between cards.
   Picking a subcategory auto-advances. If your text matches nothing, a
@@ -123,7 +125,8 @@ sets matches to `status='categorized'`, `categorized_by='rule'`. If any matched,
 the flow inserts an **Auto-review** step before Categorize showing the matches
 grouped by rule, each with undo (→ back to `pending`) and a **Re-run rules**
 button (`POST /api/rules/apply`). Re-runs only touch `pending` rows, so manual
-and accepted categorizations are safe.
+and accepted categorizations are safe. Rows left approved here are considered
+done and are dropped from the manual Categorize deck — undo one to hand-edit it.
 
 - `lib/rules/config.ts` — load + validate (`parseRulesConfig`, `validateRulesAgainstCategories`), pure/tested
 - `lib/rules/apply.ts` — `applyRules(transactions, rules) → RuleMatch[]`, pure/tested

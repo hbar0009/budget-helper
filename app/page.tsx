@@ -12,6 +12,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { StoredTransaction } from "@/lib/db/transactions";
 import type { CategorizationMap } from "@/lib/transactions/summary";
 
+/**
+ * The manual categorize deck: budget-relevant rows the user still handles by
+ * hand. Netted transfers never count; neither do rows a rule already
+ * categorized and the user left approved in auto-review — those are done.
+ */
+const inCategorizeDeck = (t: StoredTransaction): boolean =>
+  t.transferState !== "netted" && t.categorizedBy !== "rule";
+
 export default function HomePage() {
   const [transactions, setTransactions] = useState<StoredTransaction[] | null>(
     null,
@@ -37,7 +45,7 @@ export default function HomePage() {
   }, []);
 
   const firstPendingDeckIndex = (rows: StoredTransaction[]): number => {
-    const deck = rows.filter((t) => t.transferState !== "netted");
+    const deck = rows.filter(inCategorizeDeck);
     const at = deck.findIndex((t) => t.status === "pending");
     return at >= 0 ? at : 0;
   };
@@ -46,11 +54,11 @@ export default function HomePage() {
   useEffect(() => {
     load().then((rows) => {
       if (!rows) return;
-      const deck = rows.filter((t) => t.transferState !== "netted");
-      if (deck.some((t) => t.status === "pending")) {
+      const relevant = rows.filter((t) => t.transferState !== "netted");
+      if (relevant.filter(inCategorizeDeck).some((t) => t.status === "pending")) {
         setIndex(firstPendingDeckIndex(rows));
         setStage("categorize");
-      } else if (deck.length > 0) {
+      } else if (relevant.length > 0) {
         setStage("review");
       } else {
         setStage("import");
@@ -72,6 +80,16 @@ export default function HomePage() {
       setStage("categorize");
     }
   }, [stage, transactions, hasAutoCategorized]);
+
+  // The "re-ran rules" banner belongs to auto-review — clear it on the way out.
+  useEffect(() => {
+    if (stage !== "autoReview") setNotice(null);
+  }, [stage]);
+
+  const categorizeDeck = useMemo(
+    () => (transactions ?? []).filter(inCategorizeDeck),
+    [transactions],
+  );
 
   const categorizations: CategorizationMap = useMemo(() => {
     const map: CategorizationMap = {};
@@ -235,13 +253,17 @@ export default function HomePage() {
             onUndo={undo}
             onRerun={handleRerun}
             onContinue={() => {
-              setIndex(firstPendingDeckIndex(transactions));
-              setStage("categorize");
+              if (categorizeDeck.length === 0) {
+                setStage("review");
+              } else {
+                setIndex(firstPendingDeckIndex(transactions));
+                setStage("categorize");
+              }
             }}
           />
         ) : stage === "categorize" ? (
           <CategorizeStage
-            transactions={transactions}
+            transactions={categorizeDeck}
             categorizations={categorizations}
             index={index}
             onIndexChange={setIndex}

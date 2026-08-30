@@ -66,7 +66,9 @@
         "Tennis",
         "Movies",
         "Musicals",
-        "Other"
+        "Other",
+        "Refund",
+        "Going Out"
       ]
     },
     {
@@ -122,7 +124,8 @@
         "Donation",
         "Other",
         "Laundry",
-        "AI Subscriptions"
+        "AI Subscriptions",
+        "Refund"
       ]
     },
     {
