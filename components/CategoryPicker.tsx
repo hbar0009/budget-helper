@@ -22,6 +22,8 @@ interface Props {
   onCreate?: (value: string) => void;
   /** Called on Escape when the search box is already empty (used to step back). */
   onEscape?: () => void;
+  /** Grab focus on mount. On by default; turn off when several share a screen. */
+  autoFocus?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ export default function CategoryPicker({
   onPick,
   onCreate,
   onEscape,
+  autoFocus = true,
 }: Props) {
   const [search, setSearch] = useState("");
 
@@ -55,7 +58,7 @@ export default function CategoryPicker({
       </div>
       <Command loop shouldFilter={false} className="border">
         <CommandInput
-          autoFocus
+          autoFocus={autoFocus}
           value={search}
           onValueChange={setSearch}
           placeholder={`Filter or add ${label.toLowerCase()}…`}

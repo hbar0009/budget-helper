@@ -128,6 +128,16 @@ button (`POST /api/rules/apply`). Re-runs only touch `pending` rows, so manual
 and accepted categorizations are safe. Rows left approved here are considered
 done and are dropped from the manual Categorize deck — undo one to hand-edit it.
 
+**Making a rule mid-flow.** On the Categorize card, **＋ Rule** opens a dialog
+pre-filled from the transaction on screen: match text (defaults to the
+description — trim it to the stable part), category, and subcategory, with an
+**Advanced options** panel for regex, direction, account, an absolute amount
+range, and a label. Saving `POST`s to `/api/rules`, which appends the rule to
+`config/rules.json` (created if absent) and immediately runs the whole ruleset
+over the pending rows — matching rows leave the deck, and the card you were on is
+claimed by the rule even if you'd already set it by hand. Set `BUDGET_RULES_PATH`
+to point the loader/writer somewhere else (tests use this).
+
 - `lib/rules/config.ts` — load + validate (`parseRulesConfig`, `validateRulesAgainstCategories`), pure/tested
 - `lib/rules/apply.ts` — `applyRules(transactions, rules) → RuleMatch[]`, pure/tested
 - `lib/rules/run.ts` — bridges the above to the DB over `pending` rows
@@ -159,11 +169,12 @@ app/
   api/import/route.ts     POST files + accountIds -> parse, reconcile, upsert, auto-categorize
   api/transactions/route.ts        GET stored rows (+?status=) / DELETE all
   api/transactions/[id]/route.ts   PATCH one row (categorize / skip / undo)
+  api/rules/route.ts               POST — append a rule + apply it now
   api/rules/apply/route.ts         POST — re-run rules over pending rows
 components/
-  ui/                     shadcn primitives (button, card, select, command, ...)
+  ui/                     shadcn primitives (button, card, dialog, select, command, ...)
   AppHeader, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
-  TransactionCard, CategoryPicker, ReviewStage, StatCard
+  TransactionCard, CategoryPicker, RuleDialog, ReviewStage, StatCard
 hooks/useCategories.ts    Fetch the taxonomy
 lib/utils.ts              cn() class-name helper
 lib/format.ts             Money formatting
@@ -172,7 +183,7 @@ lib/db/
   schema.ts               Schema + user_version migrations
   transactions.ts         Typed queries (upsert / list / setCategorization / applyRuleCategorizations / ...), tested vs :memory:
 lib/rules/
-  config.ts               Load + validate config/rules.json (pure fns tested)
+  config.ts               Load / validate / append / write config/rules.json (pure fns tested)
   apply.ts                applyRules(transactions, rules) -> RuleMatch[] (pure, tested)
   run.ts                  Run rules over the DB's pending rows
 lib/accounts/

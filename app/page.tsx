@@ -7,6 +7,7 @@ import AutoReviewStage from "@/components/AutoReviewStage";
 import CategorizeStage from "@/components/CategorizeStage";
 import ImportStage from "@/components/ImportStage";
 import ReviewStage from "@/components/ReviewStage";
+import type { RuleInput } from "@/components/RuleDialog";
 import Stepper, { type Stage } from "@/components/Stepper";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { StoredTransaction } from "@/lib/db/transactions";
@@ -204,6 +205,31 @@ export default function HomePage() {
     }
   }
 
+  async function handleCreateRule(
+    rule: RuleInput,
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await fetch("/api/rules", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(rule),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data.error ?? "Could not save the rule." };
+      }
+      const rows = await load();
+      if (rows) setIndex(firstPendingDeckIndex(rows));
+      const n = data.matched as number;
+      setNotice(
+        `Rule saved — ${n} transaction${n === 1 ? "" : "s"} auto-categorized.`,
+      );
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Could not save the rule." };
+    }
+  }
+
   async function handleReset() {
     if (
       !window.confirm(
@@ -268,6 +294,7 @@ export default function HomePage() {
             index={index}
             onIndexChange={setIndex}
             onCategorize={categorize}
+            onCreateRule={handleCreateRule}
             onComplete={() => setStage("review")}
           />
         ) : (

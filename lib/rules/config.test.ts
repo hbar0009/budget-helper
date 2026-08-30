@@ -3,8 +3,10 @@ import { test } from "node:test";
 import type { CategoriesConfig } from "../categories/config.ts";
 import {
   RulesConfigError,
+  addRule,
   parseRulesConfig,
   validateRulesAgainstCategories,
+  type Rule,
 } from "./config.ts";
 
 test("parses a valid rules file", () => {
@@ -88,6 +90,50 @@ test("rejects an invalid direction and a negative amount bound", () => {
 
 test("rejects malformed JSON", () => {
   assert.throws(() => parseRulesConfig("{ not json"), RulesConfigError);
+});
+
+test("addRule appends and trims, dropping blank optional fields", () => {
+  const next = addRule(
+    { rules: [{ contains: "acme", category: "Income", subcategory: "Salary" }] },
+    {
+      contains: "  SPOTIFY  ",
+      regex: "",
+      account: "",
+      direction: "debit",
+      minAmount: 5,
+      category: " Entertainment ",
+      subcategory: " Streaming ",
+    },
+  );
+
+  assert.equal(next.rules.length, 2);
+  assert.deepEqual(next.rules[1], {
+    category: "Entertainment",
+    subcategory: "Streaming",
+    contains: "SPOTIFY",
+    direction: "debit",
+    minAmount: 5,
+  });
+});
+
+test("addRule does not mutate the input config", () => {
+  const config = { rules: [] as Rule[] };
+  addRule(config, { contains: "x", category: "A", subcategory: "B" });
+  assert.equal(config.rules.length, 0);
+});
+
+test("addRule rejects a rule with neither contains nor regex", () => {
+  assert.throws(
+    () => addRule({ rules: [] }, { category: "A", subcategory: "B" } as Rule),
+    RulesConfigError,
+  );
+});
+
+test("addRule rejects a rule missing a subcategory", () => {
+  assert.throws(
+    () => addRule({ rules: [] }, { contains: "x", category: "A" } as Rule),
+    RulesConfigError,
+  );
 });
 
 const CATEGORIES: CategoriesConfig = {

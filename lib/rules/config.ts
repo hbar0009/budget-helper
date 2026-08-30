@@ -4,12 +4,13 @@
  *
  * This file is likely personal (employer names, investment references), so it
  * is gitignored; `config/rules.example.json` is the template. A missing file is
- * fine — it just means no auto-categorization.
+ * fine — it just means no auto-categorization. The path can be overridden with
+ * `BUDGET_RULES_PATH` (used by tests so they never touch the real config).
  *
  * `parseRulesConfig` is pure and unit-tested; `loadRulesConfig` reads the disk.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CategoriesConfig } from "../categories/config.ts";
 
@@ -45,7 +46,9 @@ export class RulesConfigError extends Error {
   }
 }
 
-const CONFIG_PATH = path.join(process.cwd(), "config", "rules.json");
+const CONFIG_PATH =
+  process.env.BUDGET_RULES_PATH ??
+  path.join(process.cwd(), "config", "rules.json");
 
 /** Missing file -> no rules. Malformed file -> throws `RulesConfigError`. */
 export async function loadRulesConfig(): Promise<RulesConfig> {
@@ -112,6 +115,46 @@ function validateRule(rule: Rule, index: number): void {
       throw new RulesConfigError(`${where} has an invalid "${key}".`);
     }
   }
+}
+
+/**
+ * Return a new config with `input` appended as the last (lowest-priority) rule.
+ * Pure — does not mutate `config`. Blank optional fields are dropped so we never
+ * persist `"regex": ""` or `"account": ""`. Throws `RulesConfigError` if the
+ * resulting rule is not well-formed.
+ */
+export function addRule(config: RulesConfig, input: Rule): RulesConfig {
+  const clean: Rule = {
+    category: (input.category ?? "").trim(),
+    subcategory: (input.subcategory ?? "").trim(),
+  };
+
+  const label = input.label?.trim();
+  if (label) clean.label = label;
+
+  const contains = input.contains?.trim();
+  if (contains) clean.contains = contains;
+  const regex = input.regex?.trim();
+  if (regex) clean.regex = regex;
+
+  if (input.direction) clean.direction = input.direction;
+  const account = input.account?.trim();
+  if (account) clean.account = account;
+  if (input.minAmount !== undefined) clean.minAmount = input.minAmount;
+  if (input.maxAmount !== undefined) clean.maxAmount = input.maxAmount;
+
+  const next: RulesConfig = { rules: [...config.rules, clean] };
+  validateRule(clean, next.rules.length - 1);
+  return next;
+}
+
+/** Overwrite `config/rules.json` (server-only). Validates every rule first. */
+export async function writeRulesConfig(config: RulesConfig): Promise<void> {
+  if (!Array.isArray(config?.rules)) {
+    throw new RulesConfigError("`rules` must be an array.");
+  }
+  config.rules.forEach((rule, i) => validateRule(rule, i));
+  await writeFile(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 /**

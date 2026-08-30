@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import CategoryPicker from "@/components/CategoryPicker";
+import RuleDialog, { type RuleInput } from "@/components/RuleDialog";
 import TransactionCard from "@/components/TransactionCard";
 import { useCategories } from "@/hooks/useCategories";
 import { budgetDeck, type CategorizationMap } from "@/lib/transactions/summary";
@@ -21,6 +22,8 @@ interface Props {
     id: string,
     value: { category: string; subcategory: string } | null,
   ) => void;
+  /** Persist a new auto-categorization rule spun off from the current card. */
+  onCreateRule: (rule: RuleInput) => Promise<{ ok: boolean; error?: string }>;
   onComplete: () => void;
 }
 
@@ -30,6 +33,7 @@ export default function CategorizeStage({
   index,
   onIndexChange,
   onCategorize,
+  onCreateRule,
   onComplete,
 }: Props) {
   const { categories, error, addCategory } = useCategories();
@@ -39,6 +43,7 @@ export default function CategorizeStage({
   const [pendingCategory, setPendingCategory] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [ruleOpen, setRuleOpen] = useState(false);
 
   const current: ReconciledTransaction | undefined = deck[index];
   const existing = current ? categorizations[current.id] : undefined;
@@ -254,13 +259,18 @@ export default function CategorizeStage({
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button
-          variant="ghost"
-          onClick={() => goto(index - 1)}
-          disabled={index === 0}
-        >
-          Back
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => goto(index - 1)}
+            disabled={index === 0}
+          >
+            Back
+          </Button>
+          <Button variant="ghost" onClick={() => setRuleOpen(true)}>
+            ＋ Rule
+          </Button>
+        </div>
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground hidden text-xs tabular-nums sm:inline">
             ⌥S skip · ⌥← ⌥→ move
@@ -273,6 +283,19 @@ export default function CategorizeStage({
           </Button>
         </div>
       </div>
+
+      <RuleDialog
+        open={ruleOpen}
+        onOpenChange={setRuleOpen}
+        transaction={current!}
+        categories={categories}
+        initialCategory={pendingCategory ?? existing?.category ?? null}
+        initialSubcategory={existing?.subcategory ?? null}
+        remainingPending={deck.filter(
+          (t) => categorizations[t.id] === undefined,
+        )}
+        onSubmit={onCreateRule}
+      />
     </div>
   );
 }
