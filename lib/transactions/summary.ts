@@ -297,6 +297,289 @@ export function collectReimbursements(
   return { anyClaims: people.length > 0, people, hints };
 }
 
+// ---------------------------------------------------------------------------
+// History sliced by period — the Analysis view. All pure.
+// ---------------------------------------------------------------------------
+
+/** `"YYYY-MM"` from an ISO `YYYY-MM-DD` date. */
+export function monthKey(isoDate: string): string {
+  return isoDate.slice(0, 7);
+}
+
+/** The calendar month before `"YYYY-MM"` (e.g. `2026-01` -> `2025-12`). */
+export function previousMonth(month: string): string {
+  let [year, m] = month.split("-").map(Number);
+  m -= 1;
+  if (m === 0) {
+    m = 12;
+    year -= 1;
+  }
+  return `${year}-${String(m).padStart(2, "0")}`;
+}
+
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+function lastDayOfMonth(year: number, month1: number): number {
+  if (month1 === 2 && year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) {
+    return 29;
+  }
+  return DAYS_IN_MONTH[month1 - 1];
+}
+
+/** Sorted-ascending distinct `"YYYY-MM"` months present in the rows. */
+export function listMonths(transactions: { date: string }[]): string[] {
+  return [...new Set(transactions.map((t) => monthKey(t.date)))].sort();
+}
+
+export interface Period {
+  /** Inclusive ISO `YYYY-MM-DD` bounds; omit either end for open-ended. */
+  from?: string;
+  to?: string;
+}
+
+/** The `Period` spanning a whole `"YYYY-MM"` month. */
+export function monthPeriod(month: string): Period {
+  const [year, m] = month.split("-").map(Number);
+  return {
+    from: `${month}-01`,
+    to: `${month}-${String(lastDayOfMonth(year, m)).padStart(2, "0")}`,
+  };
+}
+
+/** Rows whose `date` falls inside `period` (inclusive). Plain string compare is
+ *  correct for zero-padded ISO dates. */
+export function filterByPeriod<T extends { date: string }>(
+  transactions: T[],
+  period: Period,
+): T[] {
+  return transactions.filter(
+    (t) =>
+      (period.from === undefined || t.date >= period.from) &&
+      (period.to === undefined || t.date <= period.to),
+  );
+}
+
+export interface GroupPeriodTotals {
+  group: string;
+  /** Sum of positive amounts (money in). */
+  income: number;
+  /** Sum of negative amounts (money out); <= 0. */
+  expense: number;
+  net: number;
+  count: number;
+}
+
+/**
+ * Income / expense / net per group over the rows you pass — feed it a period
+ * slice. Counts only categorized, budget-relevant rows (same deck rules as the
+ * review); pending and skipped rows are left out.
+ */
+export function periodTotals(
+  transactions: StoredTransaction[],
+): GroupPeriodTotals[] {
+  const byGroup = new Map<string, GroupPeriodTotals>();
+  for (const t of transactions) {
+    if (!isBudgetRelevant(t) || t.status !== "categorized") continue;
+    const g = mapGet(byGroup, t.group, () => ({
+      group: t.group,
+      income: 0,
+      expense: 0,
+      net: 0,
+      count: 0,
+    }));
+    if (t.amount >= 0) g.income = round2(g.income + t.amount);
+    else g.expense = round2(g.expense + t.amount);
+    g.net = round2(g.net + t.amount);
+    g.count += 1;
+  }
+  return [...byGroup.values()].sort((a, b) => a.group.localeCompare(b.group));
+}
+
+export interface MonthTotals {
+  month: string;
+  /** group -> net that month (categorized, budget-relevant). */
+  net: Record<string, number>;
+  /** Net across every group. */
+  total: number;
+}
+
+/**
+ * Net per group per month, oldest first — the all-months table, and the spine
+ * that the Phase B charts and Phase C budget targets attach to.
+ */
+export function perMonthTotals(
+  transactions: StoredTransaction[],
+): MonthTotals[] {
+  const byMonth = new Map<string, MonthTotals>();
+  for (const t of transactions) {
+    if (!isBudgetRelevant(t) || t.status !== "categorized") continue;
+    const row = mapGet(byMonth, monthKey(t.date), () => ({
+      month: monthKey(t.date),
+      net: {} as Record<string, number>,
+      total: 0,
+    }));
+    row.net[t.group] = round2((row.net[t.group] ?? 0) + t.amount);
+    row.total = round2(row.total + t.amount);
+  }
+  return [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
+
+export interface MonthInOut {
+  month: string;
+  /** Sum of positive amounts that month (>= 0). */
+  income: number;
+  /** Sum of negative amounts that month (<= 0). */
+  expense: number;
+  net: number;
+}
+
+/**
+ * Income / expense / net per month for one group, oldest first — the
+ * income-vs-expense chart. Categorized, budget-relevant rows only.
+ */
+export function monthlyInOut(
+  transactions: StoredTransaction[],
+  group: string,
+): MonthInOut[] {
+  const byMonth = new Map<string, MonthInOut>();
+  for (const t of transactions) {
+    if (!isBudgetRelevant(t) || t.status !== "categorized" || t.group !== group) {
+      continue;
+    }
+    const row = mapGet(byMonth, monthKey(t.date), () => ({
+      month: monthKey(t.date),
+      income: 0,
+      expense: 0,
+      net: 0,
+    }));
+    if (t.amount >= 0) row.income = round2(row.income + t.amount);
+    else row.expense = round2(row.expense + t.amount);
+    row.net = round2(row.net + t.amount);
+  }
+  return [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
+
+export interface MonthlyCategoryComposition {
+  /** One row per month (oldest first): `{ month, [category]: expense magnitude }`,
+   *  every `category` key present on every row (0 when absent) so the stacked
+   *  chart has no gaps. */
+  rows: Record<string, string | number>[];
+  /** Category band order: the top `topN` by total spend, then `"Other"` if any
+   *  were folded in. */
+  categories: string[];
+}
+
+/**
+ * Expense magnitude per category per month for one group — the monthly
+ * composition (stacked area). The tail past `topN` folds into `"Other"`.
+ */
+export function monthlyExpenseByCategory(
+  transactions: StoredTransaction[],
+  group: string,
+  topN = 6,
+): MonthlyCategoryComposition {
+  const total = new Map<string, number>();
+  const byMonth = new Map<string, Map<string, number>>();
+
+  for (const t of transactions) {
+    if (
+      !isBudgetRelevant(t) ||
+      t.status !== "categorized" ||
+      t.group !== group ||
+      t.amount >= 0 ||
+      !t.category
+    ) {
+      continue;
+    }
+    const magnitude = -t.amount;
+    total.set(t.category, round2((total.get(t.category) ?? 0) + magnitude));
+    const m = mapGet(byMonth, monthKey(t.date), () => new Map<string, number>());
+    m.set(t.category, round2((m.get(t.category) ?? 0) + magnitude));
+  }
+
+  const ranked = [...total.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name]) => name);
+  const top = ranked.slice(0, topN);
+  const folded = ranked.length > topN;
+  const categories = folded ? [...top, "Other"] : top;
+  const topSet = new Set(top);
+
+  const rows = [...byMonth.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, cats]) => {
+      const row: Record<string, string | number> = { month };
+      for (const name of categories) row[name] = 0;
+      for (const [name, value] of cats) {
+        const key = topSet.has(name) ? name : "Other";
+        row[key] = round2((row[key] as number) + value);
+      }
+      return row;
+    });
+
+  return { rows, categories };
+}
+
+export interface ImportBatch {
+  /** The shared `importedAt` timestamp of the rows added in one import. */
+  importedAt: string;
+  count: number;
+  /** Transaction-date span of the batch. */
+  minDate: string;
+  maxDate: string;
+}
+
+/**
+ * Distinct import batches (rows sharing an `importedAt`), newest first. Netted
+ * transfers are ignored — they never reach the review anyway.
+ */
+export function listImportBatches(
+  transactions: StoredTransaction[],
+): ImportBatch[] {
+  const byStamp = new Map<string, ImportBatch>();
+  for (const t of transactions) {
+    if (!isBudgetRelevant(t)) continue;
+    const b = mapGet(byStamp, t.importedAt, () => ({
+      importedAt: t.importedAt,
+      count: 0,
+      minDate: t.date,
+      maxDate: t.date,
+    }));
+    b.count += 1;
+    if (t.date < b.minDate) b.minDate = t.date;
+    if (t.date > b.maxDate) b.maxDate = t.date;
+  }
+  return [...byStamp.values()].sort((a, b) =>
+    b.importedAt.localeCompare(a.importedAt),
+  );
+}
+
+/** The newest import batch's id, or `null` when there are no rows. */
+export function latestBatchId(
+  transactions: StoredTransaction[],
+): string | null {
+  return listImportBatches(transactions)[0]?.importedAt ?? null;
+}
+
+/**
+ * Build the id -> categorization map from stored rows (categorized -> the pair,
+ * skipped -> `null`, anything else -> absent). Shared by the Work flow and the
+ * Analysis view.
+ */
+export function categorizationsFromStored(
+  transactions: StoredTransaction[],
+): CategorizationMap {
+  const map: CategorizationMap = {};
+  for (const t of transactions) {
+    if (t.status === "categorized" && t.category && t.subcategory) {
+      map[t.id] = { category: t.category, subcategory: t.subcategory };
+    } else if (t.status === "skipped") {
+      map[t.id] = null;
+    }
+  }
+  return map;
+}
+
 function mapGet<K, V>(map: Map<K, V>, key: K, create: () => V): V {
   let value = map.get(key);
   if (value === undefined) {

@@ -18,6 +18,13 @@ import {
 import FollowUpSection from "@/components/FollowUpSection";
 import ReimbursementSection from "@/components/ReimbursementSection";
 import { StatCard } from "@/components/StatCard";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { StoredTransaction } from "@/lib/db/transactions";
 import { formatSigned } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -27,6 +34,7 @@ import {
   collectFollowUps,
   collectReimbursements,
   isRepaymentCandidate,
+  listImportBatches,
   type CategorizationMap,
 } from "@/lib/transactions/summary";
 
@@ -57,8 +65,15 @@ interface Props {
   ) => Promise<Result>;
   onDeleteRepayment: (repaymentId: string) => Promise<Result>;
   onBack: () => void;
-  onReset: () => void;
 }
+
+const batchLabel = (importedAt: string, count: number): string => {
+  const when = new Date(importedAt).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  return `${when} · ${count} row${count === 1 ? "" : "s"}`;
+};
 
 export default function ReviewStage({
   transactions,
@@ -70,11 +85,28 @@ export default function ReviewStage({
   onRecordRepayment,
   onDeleteRepayment,
   onBack,
-  onReset,
 }: Props) {
+  // The category totals summarise one import batch at a time (default: the
+  // latest). Follow-ups and reimbursements below stay global — they're
+  // cross-time "needs attention" lists.
+  const batches = useMemo(
+    () => listImportBatches(transactions),
+    [transactions],
+  );
+  const [pickedBatch, setPickedBatch] = useState<string | null>(null);
+  const activeBatch = pickedBatch ?? batches[0]?.importedAt ?? null;
+
+  const scoped = useMemo(
+    () =>
+      activeBatch
+        ? transactions.filter((t) => t.importedAt === activeBatch)
+        : transactions,
+    [transactions, activeBatch],
+  );
+
   const summary = useMemo(
-    () => buildReviewSummary(transactions, categorizations),
-    [transactions, categorizations],
+    () => buildReviewSummary(scoped, categorizations),
+    [scoped, categorizations],
   );
   const followUps = useMemo(
     () => collectFollowUps(transactions),
@@ -100,7 +132,7 @@ export default function ReviewStage({
       "subcategory",
       "transfer_state",
     ];
-    const rows = budgetDeck(transactions).map((t) => {
+    const rows = budgetDeck(scoped).map((t) => {
       const entry = categorizations[t.id];
       return [
         t.date,
@@ -157,6 +189,32 @@ export default function ReviewStage({
 
   return (
     <div className="space-y-4">
+      {batches.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Reviewing import</span>
+          <Select
+            value={activeBatch ?? undefined}
+            onValueChange={setPickedBatch}
+          >
+            <SelectTrigger className="w-auto">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {batches.map((b, i) => (
+                <SelectItem key={b.importedAt} value={b.importedAt}>
+                  {batchLabel(b.importedAt, b.count)}
+                  {i === 0 ? " · latest" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-muted-foreground text-xs">
+            covers {batches.find((b) => b.importedAt === activeBatch)?.minDate} →{" "}
+            {batches.find((b) => b.importedAt === activeBatch)?.maxDate}
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <StatCard label="In deck" value={summary.total} />
         <StatCard label="Categorized" value={summary.categorized} />
@@ -328,10 +386,6 @@ export default function ReviewStage({
         repayment. CSV export is an offline stopgap. Everything is saved locally
         as you go.
       </p>
-
-      <Button variant="ghost" size="sm" onClick={onReset}>
-        Clear all data
-      </Button>
     </div>
   );
 }

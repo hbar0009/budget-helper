@@ -5,7 +5,8 @@ A simple app to assist in the process of categorizing and adding transaction dat
 ## Status
 
 Import, transfer reconciliation, the categorization card + review screen, local
-SQLite persistence, and the Google Sheets sink are built.
+SQLite persistence, the Google Sheets sink, and the Analysis view (history by
+month, with charts) are built. Budget targets are next.
 
 ## Setup
 
@@ -89,8 +90,13 @@ number**, or both legs saying **"internal transfer"**. Pairs are labelled:
 
 ## Categorization
 
-After import the app steps through a three-stage flow (`Import → Categorize →
-Review`, driven by `app/page.tsx`):
+The app has two areas, switched from the header: **Work** (`/`) — the
+import/categorize/review pipeline below — and **Analysis** (`/analysis`, see
+[Analysis](#analysis)). Imported transactions accumulate in the database across
+every import; the Stepper's **Import** step is reachable any time to add another
+statement without discarding what's there.
+
+The Work flow steps through `Import → Categorize → Review` (`app/page.tsx`):
 
 - **Categorize** — one card per transaction (netted transfers and rows a rule
   already categorized are excluded — undo those from Auto-review to hand-edit
@@ -106,8 +112,38 @@ Review`, driven by `app/page.tsx`):
 - **Review** — per-group (`personal` / `shared`) net totals broken down by
   category → subcategory, plus counts of skipped / pending / netted / cross-group
   rows, a list of skipped transactions, and a **Needs follow-up** section (see
-  Flags). **Push to Sheets** writes the categorized rows to each group's sink
-  (see Sinks); `Download CSV` is an offline alternative.
+  Flags). Once there's more than one import, the category totals **scope to one
+  import batch at a time** (rows sharing an `imported_at`; default the latest,
+  switchable) so "did this import categorize right?" stays focused — follow-ups
+  and reimbursements stay global. **Push to Sheets** writes the categorized rows
+  to each group's sink (see Sinks); `Download CSV` is an offline alternative.
+
+## Analysis
+
+`/analysis` browses the accumulated history. Pick a **calendar month**
+(‹ prev / next › or the dropdown) or a **custom date range**; per group you get
+income / expense / net for the period, the category → subcategory breakdown
+(same aggregation as Review), and a **Δ vs previous month** column. An **Every
+month** table lists net per group per month (click a row to jump the picker). A
+collapsed **Danger zone** at the bottom holds the full data wipe (`DELETE
+/api/transactions`), gated behind typing `DELETE`.
+
+**Charts** (Recharts, `components/charts/`) — each group card has a tab strip,
+one chart at a time, the breakdown table below:
+
+| Tab | Chart |
+|---|---|
+| Category | horizontal bars, biggest spend first, for the selected period (one hue) |
+| Over time | net per month, coloured by sign, zero baseline; click a month to select it |
+| In vs out | income above / expense below the baseline, per month |
+| Composition | monthly spend as a stacked area of the top 6 categories + "Other" |
+
+Colours are the validated data-viz palette as `--chart-*` custom properties in
+`app/globals.css` (referenced straight in SVG, so dark mode swaps for free).
+Read-only — categorizing still happens in the Work flow. Pure helpers in
+`lib/transactions/summary.ts` (`monthKey` / `listMonths` / `filterByPeriod` /
+`monthPeriod` / `periodTotals` / `perMonthTotals` / `monthlyInOut` /
+`monthlyExpenseByCategory` / `listImportBatches`, all unit-tested).
 
 ## Flags & follow-up
 
@@ -315,8 +351,9 @@ Lives at `data/<profile>/config/accounts.json` (seeded from
 
 ```
 app/
-  layout.tsx              Root layout
-  page.tsx                Flow orchestrator (client): loads from the DB, picks the stage
+  layout.tsx              Root layout — env banner + AppHeader (Work / Analysis nav)
+  page.tsx                Work flow orchestrator (client): loads from the DB, picks the stage
+  analysis/page.tsx       Analysis view (client): history by month / range
   globals.css             Tailwind v4 + shadcn theme tokens (OS light/dark)
   api/accounts/route.ts   GET the account list for the UI
   api/categories/route.ts GET the taxonomy / POST a new category or subcategory
@@ -335,10 +372,13 @@ app/
   api/sink/push/route.ts           POST — push each group's rows to its sink spreadsheet
 components/
   ui/                     shadcn primitives (button, card, dialog, select, textarea, ...)
-  AppHeader, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
+  AppHeader, EnvBanner, Stepper, ImportStage, AutoReviewStage, CategorizeStage,
   TransactionCard, CategoryPicker, RuleDialog, FlagDialog, FlagChips,
   SplitDialog, RepaymentDialog, ReimbursementChip, ReviewStage,
-  FollowUpSection, ReimbursementSection, StatCard
+  FollowUpSection, ReimbursementSection, StatCard,
+  AnalysisView, DangerZone
+  charts/  chartTheme, ChartTooltip, GroupChartPanel,
+           CategoryBarChart, NetOverTimeChart, InOutChart, CompositionAreaChart
 hooks/useCategories.ts    Fetch the taxonomy
 hooks/useAccounts.ts      Fetch the account list
 scripts/seed-dev.ts       Reset data/dev/ to a copy of data/prod/
@@ -401,3 +441,8 @@ Add a `BankProfile` to `lib/transactions/profiles.ts` and push it onto
 6. ~~Flags substrate + wrong-account / note flags + review follow-up section.~~ Done (Phase 1).
 7. ~~Reimbursement / split-expense tracking — per-person claims on a fronted debit, repayment linking (bank credit or cash), auto-settle, "Owed to you" review with repayment hints.~~ Done (Parts A + B).
 8. ~~Write categorized rows to a budget spreadsheet — Google Sheets first, Excel later, behind a common `sink` interface, one per group.~~ Done (Google Sheets; upsert by transaction id).
+9. In-app budgeting + data viz, phased:
+   - **A** — ~~history + month/range Analysis view; Review scoped to the latest import batch.~~ Done.
+   - **B** — ~~charts on the Analysis view (category / net-over-time / in-vs-out / stacked composition), Recharts.~~ Done.
+   - **C** — budget targets per category per month, with actual-vs-target.
+   - **D** — (undecided) recurring/subscription detection, forecasting, net worth from balances.

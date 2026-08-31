@@ -30,7 +30,9 @@ export default function Stepper({ stage, stages, unlocked, onNavigate }: Props) 
       {stages.map((key, i) => {
         const state =
           i === activeIndex ? "active" : i < activeIndex ? "done" : "upcoming";
-        const clickable = unlocked && key !== "import" && i !== activeIndex;
+        // Once there's data every step is reachable — including Import, to add
+        // another statement without discarding what's already there.
+        const clickable = unlocked && i !== activeIndex;
 
         return (
           <button

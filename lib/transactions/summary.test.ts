@@ -6,8 +6,20 @@ import type { StoredTransaction } from "../db/transactions.ts";
 import {
   budgetDeck,
   buildReviewSummary,
+  categorizationsFromStored,
   collectFollowUps,
   collectReimbursements,
+  filterByPeriod,
+  latestBatchId,
+  listImportBatches,
+  listMonths,
+  monthKey,
+  monthPeriod,
+  monthlyExpenseByCategory,
+  monthlyInOut,
+  perMonthTotals,
+  periodTotals,
+  previousMonth,
 } from "./summary.ts";
 import type { CategorizationMap } from "./summary.ts";
 import type { ReconciledTransaction, TransferState } from "./types.ts";
@@ -300,4 +312,161 @@ test("collectReimbursements ignores a credit that already funds a repayment", ()
     ],
   });
   assert.equal(collectReimbursements([golf, bobPaid]).hints.length, 0);
+});
+
+// --- Analysis: history sliced by period ------------------------------------
+
+function cat(
+  partial: Partial<StoredTransaction> & Pick<StoredTransaction, "amount">,
+): StoredTransaction {
+  return stored({
+    status: "categorized",
+    category: partial.category ?? "Eating Out",
+    subcategory: partial.subcategory ?? "Restaurant",
+    categorizedBy: "manual",
+    ...partial,
+  });
+}
+
+test("monthKey / previousMonth / monthPeriod handle year and month rollover", () => {
+  assert.equal(monthKey("2026-03-14"), "2026-03");
+  assert.equal(previousMonth("2026-01"), "2025-12");
+  assert.equal(previousMonth("2026-03"), "2026-02");
+  assert.deepEqual(monthPeriod("2026-02"), { from: "2026-02-01", to: "2026-02-28" });
+  assert.deepEqual(monthPeriod("2024-02"), { from: "2024-02-01", to: "2024-02-29" }); // leap
+  assert.deepEqual(monthPeriod("2026-12"), { from: "2026-12-01", to: "2026-12-31" });
+});
+
+test("listMonths returns sorted distinct months", () => {
+  assert.deepEqual(
+    listMonths([
+      { date: "2026-03-02" },
+      { date: "2026-01-31" },
+      { date: "2026-03-28" },
+      { date: "2025-12-01" },
+    ]),
+    ["2025-12", "2026-01", "2026-03"],
+  );
+});
+
+test("filterByPeriod is inclusive on both ends and honours open ends", () => {
+  const rows = [
+    { date: "2026-01-31" },
+    { date: "2026-02-01" },
+    { date: "2026-02-28" },
+    { date: "2026-03-01" },
+  ];
+  assert.deepEqual(
+    filterByPeriod(rows, monthPeriod("2026-02")).map((r) => r.date),
+    ["2026-02-01", "2026-02-28"],
+  );
+  assert.equal(filterByPeriod(rows, { from: "2026-02-15" }).length, 2);
+  assert.equal(filterByPeriod(rows, { to: "2026-02-01" }).length, 2);
+});
+
+test("periodTotals splits income / expense / net per group, categorized only", () => {
+  const rows = [
+    cat({ amount: -50, group: "personal" }),
+    cat({ amount: -30, group: "personal" }),
+    cat({ amount: 200, group: "personal" }),
+    cat({ amount: -80, group: "shared" }),
+    stored({ amount: -999, group: "personal", status: "pending" }), // ignored
+    cat({ amount: -12, group: "personal", transferState: "netted" }), // ignored
+  ];
+  assert.deepEqual(periodTotals(rows), [
+    { group: "personal", income: 200, expense: -80, net: 120, count: 3 },
+    { group: "shared", income: 0, expense: -80, net: -80, count: 1 },
+  ]);
+});
+
+test("perMonthTotals is net per group per month, oldest first", () => {
+  const rows = [
+    cat({ amount: -40, group: "personal", date: "2026-01-10" }),
+    cat({ amount: -60, group: "personal", date: "2026-01-20" }),
+    cat({ amount: -25, group: "shared", date: "2026-01-15" }),
+    cat({ amount: -30, group: "personal", date: "2026-02-05" }),
+    stored({ amount: -5, date: "2026-02-06", status: "skipped" }), // ignored
+  ];
+  const months = perMonthTotals(rows);
+  assert.deepEqual(months.map((m) => m.month), ["2026-01", "2026-02"]);
+  assert.deepEqual(months[0].net, { personal: -100, shared: -25 });
+  assert.equal(months[0].total, -125);
+  assert.deepEqual(months[1].net, { personal: -30 });
+});
+
+test("listImportBatches groups by importedAt newest first with a date span", () => {
+  const rows = [
+    cat({ amount: -1, date: "2026-01-05", importedAt: "2026-01-31T09:00:00.000Z" }),
+    cat({ amount: -2, date: "2026-01-20", importedAt: "2026-01-31T09:00:00.000Z" }),
+    cat({ amount: -3, date: "2026-02-14", importedAt: "2026-02-28T09:00:00.000Z" }),
+    cat({ amount: -4, date: "2026-02-02", transferState: "netted", importedAt: "2026-02-28T09:00:00.000Z" }),
+  ];
+  const batches = listImportBatches(rows);
+  assert.deepEqual(batches.map((b) => b.importedAt), [
+    "2026-02-28T09:00:00.000Z",
+    "2026-01-31T09:00:00.000Z",
+  ]);
+  assert.deepEqual(batches[1], {
+    importedAt: "2026-01-31T09:00:00.000Z",
+    count: 2,
+    minDate: "2026-01-05",
+    maxDate: "2026-01-20",
+  });
+  assert.equal(batches[0].count, 1); // netted row excluded
+  assert.equal(latestBatchId(rows), "2026-02-28T09:00:00.000Z");
+  assert.equal(latestBatchId([]), null);
+});
+
+test("categorizationsFromStored maps categorized -> pair, skipped -> null", () => {
+  const a = cat({ amount: -5, id: "a", category: "Food", subcategory: "Groceries" });
+  const b = stored({ amount: -6, id: "b", status: "skipped" });
+  const c = stored({ amount: -7, id: "c", status: "pending" });
+  assert.deepEqual(categorizationsFromStored([a, b, c]), {
+    a: { category: "Food", subcategory: "Groceries" },
+    b: null,
+  });
+});
+
+test("monthlyInOut splits income / expense / net per month for one group", () => {
+  const rows = [
+    cat({ amount: -40, group: "personal", date: "2026-01-10" }),
+    cat({ amount: 3000, group: "personal", date: "2026-01-28" }),
+    cat({ amount: -55, group: "personal", date: "2026-02-04" }),
+    cat({ amount: -99, group: "shared", date: "2026-01-05" }), // other group
+    stored({ amount: -5, group: "personal", date: "2026-01-11", status: "pending" }),
+  ];
+  assert.deepEqual(monthlyInOut(rows, "personal"), [
+    { month: "2026-01", income: 3000, expense: -40, net: 2960 },
+    { month: "2026-02", income: 0, expense: -55, net: -55 },
+  ]);
+});
+
+test("monthlyExpenseByCategory ranks categories, folds the tail into Other, fills gaps", () => {
+  const mk = (amount: number, category: string, date: string) =>
+    cat({ amount, category, subcategory: "x", group: "personal", date });
+  const rows = [
+    mk(-100, "Rent", "2026-01-05"),
+    mk(-40, "Groceries", "2026-01-10"),
+    mk(-10, "Coffee", "2026-01-12"),
+    mk(-5, "Parking", "2026-01-15"),
+    mk(-80, "Rent", "2026-02-05"),
+    mk(-30, "Groceries", "2026-02-08"),
+    mk(-8, "Fuel", "2026-02-20"),
+    cat({ amount: 500, category: "Income", subcategory: "x", group: "personal", date: "2026-02-01" }),
+  ];
+  const { rows: out, categories } = monthlyExpenseByCategory(rows, "personal", 2);
+  assert.deepEqual(categories, ["Rent", "Groceries", "Other"]);
+  assert.deepEqual(out, [
+    { month: "2026-01", Rent: 100, Groceries: 40, Other: 15 }, // Coffee 10 + Parking 5
+    { month: "2026-02", Rent: 80, Groceries: 30, Other: 8 }, // Fuel 8; income ignored
+  ]);
+});
+
+test("monthlyExpenseByCategory keeps all categories when under topN and has no Other", () => {
+  const { categories } = monthlyExpenseByCategory(
+    [cat({ amount: -10, category: "A", group: "personal", date: "2026-01-01" })],
+    "personal",
+    6,
+  );
+  assert.deepEqual(categories, ["A"]);
 });

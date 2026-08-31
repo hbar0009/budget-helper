@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import AppHeader from "@/components/AppHeader";
 import AutoReviewStage from "@/components/AutoReviewStage";
 import CategorizeStage from "@/components/CategorizeStage";
 import FlagDialog from "@/components/FlagDialog";
@@ -17,8 +16,8 @@ import { useAccounts } from "@/hooks/useAccounts";
 import type { FlagKind } from "@/lib/db/flags";
 import type { StoredTransaction } from "@/lib/db/transactions";
 import {
+  categorizationsFromStored,
   isRepaymentCandidate,
-  type CategorizationMap,
 } from "@/lib/transactions/summary";
 
 type MutationResult = { ok: boolean; error?: string };
@@ -108,17 +107,10 @@ export default function HomePage() {
     [transactions],
   );
 
-  const categorizations: CategorizationMap = useMemo(() => {
-    const map: CategorizationMap = {};
-    for (const t of transactions ?? []) {
-      if (t.status === "categorized" && t.category && t.subcategory) {
-        map[t.id] = { category: t.category, subcategory: t.subcategory };
-      } else if (t.status === "skipped") {
-        map[t.id] = null;
-      }
-    }
-    return map;
-  }, [transactions]);
+  const categorizations = useMemo(
+    () => categorizationsFromStored(transactions ?? []),
+    [transactions],
+  );
 
   const patch = useCallback(
     async (id: string, body: Record<string, unknown>, optimistic: StoredTransaction) => {
@@ -329,24 +321,6 @@ export default function HomePage() {
     }
   }
 
-  async function handleReset() {
-    if (
-      !window.confirm(
-        "Delete every imported transaction and its categorization? This cannot be undone.",
-      )
-    ) {
-      return;
-    }
-    await fetch("/api/transactions", { method: "DELETE" });
-    setTransactions([]);
-    setIndex(0);
-    setNotice(null);
-    setFlagTargetId(null);
-    setSplitTargetId(null);
-    setRepaymentTargetId(null);
-    setStage("import");
-  }
-
   const unlocked = (transactions?.length ?? 0) > 0;
   const flagTarget =
     (transactions ?? []).find((t) => t.id === flagTargetId) ?? null;
@@ -366,114 +340,110 @@ export default function HomePage() {
   );
 
   return (
-    <>
-      <AppHeader onReset={unlocked ? handleReset : undefined} />
-      <main className="mx-auto max-w-3xl px-6 pt-7 pb-20">
-        <Stepper
-          stage={stage}
-          stages={stages}
-          unlocked={unlocked}
-          onNavigate={(next) => unlocked && setStage(next)}
+    <main className="mx-auto max-w-3xl px-6 pt-7 pb-20">
+      <Stepper
+        stage={stage}
+        stages={stages}
+        unlocked={unlocked}
+        onNavigate={(next) => unlocked && setStage(next)}
+      />
+
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {notice && (
+        <Alert className="mb-4">
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      )}
+
+      {transactions === null ? (
+        <p className="text-muted-foreground text-sm">Loading…</p>
+      ) : stage === "import" ? (
+        <ImportStage onImported={handleImported} />
+      ) : stage === "autoReview" ? (
+        <AutoReviewStage
+          transactions={transactions}
+          onUndo={undo}
+          onFlag={setFlagTargetId}
+          onSplit={setSplitTargetId}
+          onRepayment={setRepaymentTargetId}
+          onRerun={handleRerun}
+          onContinue={() => {
+            if (categorizeDeck.length === 0) {
+              setStage("review");
+            } else {
+              setIndex(firstPendingDeckIndex(transactions));
+              setStage("categorize");
+            }
+          }}
         />
+      ) : stage === "categorize" ? (
+        <CategorizeStage
+          transactions={categorizeDeck}
+          categorizations={categorizations}
+          index={index}
+          onIndexChange={setIndex}
+          onCategorize={categorize}
+          onCreateRule={handleCreateRule}
+          onFlag={setFlagTargetId}
+          onSplit={setSplitTargetId}
+          onRepayment={setRepaymentTargetId}
+          onComplete={() => setStage("review")}
+        />
+      ) : (
+        <ReviewStage
+          transactions={transactions}
+          categorizations={categorizations}
+          onUpdateFlag={updateFlag}
+          onDeleteFlag={deleteFlag}
+          onUpdateClaim={updateClaim}
+          onDeleteClaim={deleteClaim}
+          onRecordRepayment={recordRepayment}
+          onDeleteRepayment={deleteRepayment}
+          onBack={() => setStage("categorize")}
+        />
+      )}
 
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        {notice && (
-          <Alert className="mb-4">
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        )}
+      {flagTarget && (
+        <FlagDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setFlagTargetId(null);
+          }}
+          transaction={flagTarget}
+          accounts={accounts}
+          onAdd={(kind, data) => addFlag(flagTarget.id, kind, data)}
+          onDelete={deleteFlag}
+        />
+      )}
 
-        {transactions === null ? (
-          <p className="text-muted-foreground text-sm">Loading…</p>
-        ) : stage === "import" ? (
-          <ImportStage onImported={handleImported} />
-        ) : stage === "autoReview" ? (
-          <AutoReviewStage
-            transactions={transactions}
-            onUndo={undo}
-            onFlag={setFlagTargetId}
-            onSplit={setSplitTargetId}
-            onRepayment={setRepaymentTargetId}
-            onRerun={handleRerun}
-            onContinue={() => {
-              if (categorizeDeck.length === 0) {
-                setStage("review");
-              } else {
-                setIndex(firstPendingDeckIndex(transactions));
-                setStage("categorize");
-              }
-            }}
-          />
-        ) : stage === "categorize" ? (
-          <CategorizeStage
-            transactions={categorizeDeck}
-            categorizations={categorizations}
-            index={index}
-            onIndexChange={setIndex}
-            onCategorize={categorize}
-            onCreateRule={handleCreateRule}
-            onFlag={setFlagTargetId}
-            onSplit={setSplitTargetId}
-            onRepayment={setRepaymentTargetId}
-            onComplete={() => setStage("review")}
-          />
-        ) : (
-          <ReviewStage
-            transactions={transactions}
-            categorizations={categorizations}
-            onUpdateFlag={updateFlag}
-            onDeleteFlag={deleteFlag}
-            onUpdateClaim={updateClaim}
-            onDeleteClaim={deleteClaim}
-            onRecordRepayment={recordRepayment}
-            onDeleteRepayment={deleteRepayment}
-            onBack={() => setStage("categorize")}
-            onReset={handleReset}
-          />
-        )}
+      {splitTarget && (
+        <SplitDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setSplitTargetId(null);
+          }}
+          transaction={splitTarget}
+          onAdd={(claims) => addClaims(splitTarget.id, claims)}
+          onUpdate={updateClaim}
+          onDelete={deleteClaim}
+        />
+      )}
 
-        {flagTarget && (
-          <FlagDialog
-            open
-            onOpenChange={(o) => {
-              if (!o) setFlagTargetId(null);
-            }}
-            transaction={flagTarget}
-            accounts={accounts}
-            onAdd={(kind, data) => addFlag(flagTarget.id, kind, data)}
-            onDelete={deleteFlag}
-          />
-        )}
-
-        {splitTarget && (
-          <SplitDialog
-            open
-            onOpenChange={(o) => {
-              if (!o) setSplitTargetId(null);
-            }}
-            transaction={splitTarget}
-            onAdd={(claims) => addClaims(splitTarget.id, claims)}
-            onUpdate={updateClaim}
-            onDelete={deleteClaim}
-          />
-        )}
-
-        {repaymentTarget && isRepaymentCandidate(repaymentTarget) && (
-          <RepaymentDialog
-            open
-            onOpenChange={(o) => {
-              if (!o) setRepaymentTargetId(null);
-            }}
-            credit={repaymentTarget}
-            openClaims={openClaimRows}
-            onSubmit={(rows) => linkRepayments(repaymentTarget.id, rows)}
-          />
-        )}
-      </main>
-    </>
+      {repaymentTarget && isRepaymentCandidate(repaymentTarget) && (
+        <RepaymentDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setRepaymentTargetId(null);
+          }}
+          credit={repaymentTarget}
+          openClaims={openClaimRows}
+          onSubmit={(rows) => linkRepayments(repaymentTarget.id, rows)}
+        />
+      )}
+    </main>
   );
 }

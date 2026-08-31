@@ -30,6 +30,23 @@
   --border: oklch(0.929 0.013 255.508);
   --input: oklch(0.929 0.013 255.508);
   --ring: oklch(0.704 0.04 256.788);
+
+  /* Analysis charts — validated data-viz palette (light). Referenced as
+     var(--chart-*) directly in SVG fills/strokes so dark mode swaps for free. */
+  --chart-seq: #2a78d6; /* one-hue magnitude (spend-by-category bars) */
+  --chart-pos: #2a78d6; /* diverging positive — money in / net up */
+  --chart-neg: #e34948; /* diverging negative — money out / net down */
+  --chart-cat-1: #2a78d6;
+  --chart-cat-2: #eb6834;
+  --chart-cat-3: #1baf7a;
+  --chart-cat-4: #eda100;
+  --chart-cat-5: #e87ba4;
+  --chart-cat-6: #008300;
+  --chart-other: #898781; /* folded tail ("Other") */
+  --chart-grid: #e1e0d9;
+  --chart-axis: #c3c2b7;
+  --chart-label: #898781;
+  --chart-surface: var(--card); /* 2px gap strokes between stacked bands */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,6 +74,21 @@
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.551 0.027 264.364);
+
+    /* Analysis charts — same eight hues stepped for the dark surface. */
+    --chart-seq: #3987e5;
+    --chart-pos: #3987e5;
+    --chart-neg: #e66767;
+    --chart-cat-1: #3987e5;
+    --chart-cat-2: #d95926;
+    --chart-cat-3: #199e70;
+    --chart-cat-4: #c98500;
+    --chart-cat-5: #d55181;
+    --chart-cat-6: #008300;
+    --chart-other: #898781;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #383835;
+    --chart-label: #898781;
   }
 }
 
